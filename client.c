@@ -1,12 +1,19 @@
 /*
 ** client.c -- user can send messages, encapsulated as packets when sent to server
 */
-
-
 #include "protocol.h"
 
 #define SERVER 0
 #define STDIN 1 
+
+// Convert sockaddr to sockaddr_in or sockaddr_in6 (equivalent structs that are easier to work with)
+void *get_in_addr(struct sockaddr *sa) {
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in*) sa)->sin_addr);
+  }
+
+  return &(((struct sockaddr_in6*) sa)->sin6_addr);
+}
 
 int setup_client(char *host) {
   struct addrinfo hints, *servinfo, *p;
@@ -55,29 +62,6 @@ int setup_client(char *host) {
   return sockfd;
 }
 
-void read_packet(int fd, char *buffer) {
-  // pick approach to read in packet. read type, length, then the data
-  // print the data
-  int msg_bytes;
-  
-  if ((msg_bytes = recv(fd, buffer, MAX_DATA_SIZE-1, 0)) == -1) {
-    perror("recv");
-    exit(1);
-  }
-
-  buffer[msg_bytes] = '\0';
-}
-
-void send_packet(int fd, char *buffer) {
-  // create packet by adding type, length, and data
-  // print packet details & total size on various inputs by user before sending to server
-  // write sendall() like in Beej 
-  // add user ip field to packet?
-  printf("message: %s", buffer);
-  printf("message length: %zu\n", strlen(buffer));
-}
-
-
 int main(int argc, char *argv[]) {
   int sockfd;
   int fd_count = 2;
@@ -110,8 +94,12 @@ int main(int argc, char *argv[]) {
 
     // Check if server has sent data
     if (pfds[SERVER].revents & (POLLIN | POLLHUP)) {
-      read_packet(pfds[0].fd, buffer);
-      printf("server: %s\n", buffer);
+      struct packet *pack = malloc(sizeof(struct packet));
+      if (read_packet(pfds[0].fd, pack) <= 0) {
+        fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
+        exit(1);
+      }
+      printf("server: %s\n", pack->data);
     }
 
     // Check if user has data to send
@@ -121,7 +109,17 @@ int main(int argc, char *argv[]) {
         continue;
       }
       buffer[strcspn(buffer, "\n")] = 0; // removes \n character at end of input string
-      send_packet(sockfd, buffer);
+
+      struct packet *pack = malloc(sizeof(struct packet));
+      pack->type = TYPE_CLIENT;
+      pack->len = strlen(buffer);
+      strncpy(pack->data, buffer, strlen(buffer));
+
+      if (send_packet(sockfd, pack) == -1) {
+        fprintf(stderr, "client: send");
+        exit(1);
+      }
+      free(pack);
     }
   }
 

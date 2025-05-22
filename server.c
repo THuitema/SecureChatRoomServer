@@ -6,6 +6,15 @@
 
 #define MAX_QUEUE_SIZE 10
 
+// Convert sockaddr to sockaddr_in or sockaddr_in6 (equivalent structs that are easier to work with)
+void *get_in_addr(struct sockaddr *sa) {
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in*) sa)->sin_addr);
+  }
+
+  return &(((struct sockaddr_in6*) sa)->sin6_addr);
+}
+
 // Performs server network setup, including ggathering address info for network, creating socket, and binding to port
 int setup_server() {
   struct addrinfo hints, *servinfo, *p;
@@ -82,7 +91,19 @@ void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
   (*fd_count)++;
 
   // Send welcome message
-  char msg[] = "Welcome to the chat room! ** MAKE THIS A PACKET **\n";
+  char msg[] = "Welcome to the chat room!";
+
+  struct packet *pack = malloc(sizeof(struct packet));
+  pack->type = TYPE_SERVER;
+  pack->len = strlen(msg);
+  strncpy(pack->data, msg, strlen(msg));
+
+  if (send_packet(newfd, pack) == -1) {
+    fprintf(stderr, "server: send");
+    exit(1);
+  }
+  free(pack);
+  
   if (send(newfd, msg, sizeof msg, 0) == -1) {
     perror("welcome message");
   }
@@ -99,7 +120,7 @@ int main(void) {
   struct sockaddr_storage conn_addr;
   socklen_t addrlen;
 
-  char buffer[MAX_DATA_SIZE];
+  // char buffer[MAX_DATA_SIZE];
   char conn_ip[INET6_ADDRSTRLEN];
 
   int fd_count = 0;
@@ -135,38 +156,48 @@ int main(void) {
           } else {
             add_client(&pfds, newfd, &fd_count, &fd_size);
 
-            printf("pollserver: new connection from %s on socket %d\n",
+            printf("server: new connection from %s on socket %d\n",
               inet_ntop(conn_addr.ss_family, get_in_addr((struct sockaddr*)&conn_addr), conn_ip, INET6_ADDRSTRLEN),
               newfd);
           }
         } else { 
           // Handle regular client connection
-          // TODO: read in packet function
-          int msg_bytes = recv(pfds[i].fd, buffer, sizeof buffer, 0);
+          struct packet *pack = malloc(sizeof(struct packet));
+
+          // if (read_packet(pfds[0].fd, pack) == -1) {
+          //   fprintf(stderr, "server: recv");
+          //   exit(1);
+          // }
           int sender_fd = pfds[i].fd;
+          int rv = read_packet(sender_fd, pack);
+          // printf("server: %s\n", pack->data);
+
+
+          // int msg_bytes = recv(pfds[i].fd, buffer, sizeof buffer, 0);
+          
 
           // Check for error or connection closed by client
-          if (msg_bytes <= 0) {
-            if (msg_bytes == 0) {
+          if (rv <= 0) {
+            if (rv == 0) {
               printf("server: socket %d hung up\n", sender_fd);
             } else {
               perror("server: recv");
             }
 
-            close(pfds[i].fd);
+            close(sender_fd);
             remove_client(pfds, i, &fd_count);
-            i--; // so we reexamine the slot we just deleted
+            i--; // so we examine the fd we just swapped into this index
           } else {
-
+            printf("client (socket %d): %s\n", sender_fd, pack->data);
             // Broadcast data to everyone, except the listener and the sender
-            for(int j = 0; j < fd_count; j++) {
-              int dest_fd = pfds[j].fd;
-              if (dest_fd != serverfd && dest_fd != sender_fd) {
-                if (send(dest_fd, buffer, msg_bytes, 0) == -1) {
-                  perror("send");
-                }
-              }
-            }
+            // for(int j = 0; j < fd_count; j++) {
+            //   int dest_fd = pfds[j].fd;
+            //   if (dest_fd != serverfd && dest_fd != sender_fd) {
+            //     if (send(dest_fd, buffer, msg_bytes, 0) == -1) {
+            //       perror("send");
+            //     }
+            //   }
+            // }
           }
         }
       }
