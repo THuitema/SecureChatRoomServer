@@ -8,15 +8,14 @@ int send_packet(int fd, struct packet *pack) {
     return -1;
   }
 
-  uint32_t packet_size = 8 + pack->len;
+  uint32_t packet_size = 4 + USERNAME_LEN + pack->len;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
-  uint32_t packet_type = htonl(pack->type);
-  uint32_t packet_len = htonl(pack->len);
-  memcpy(buffer, &packet_type, 4);
-  memcpy(buffer + 4, &packet_len, 4);
-  memcpy(buffer + 8, pack->data, pack->len);
+  uint32_t packet_len = htonl(pack->len); // should be 16 + data len
+  memcpy(buffer, &packet_len, 4);
+  memcpy(buffer + 4, pack->username, USERNAME_LEN);
+  memcpy(buffer + 4 + USERNAME_LEN, pack->data, pack->len);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -39,16 +38,20 @@ int send_packet(int fd, struct packet *pack) {
 
 int read_packet(int fd, struct packet *pack) {
   int rv;
+  uint32_t len; 
+  char username[USERNAME_LEN + 1];
 
-  uint32_t type, len;
-  if ((rv = read_exact(fd, &type, 4)) <= 0) {
-    return rv;
-  }
+  // read length field
   if ((rv = read_exact(fd, &len, 4)) <= 0) {
     return rv;
   }
 
-  type = ntohl(type);
+  // read username field
+  if ((rv = read_exact(fd, username, USERNAME_LEN)) <= 0) {
+    return rv;
+  }
+  username[USERNAME_LEN] = '\0';
+
   len = ntohl(len);
 
   if (len > MAX_DATA_SIZE) {
@@ -56,13 +59,14 @@ int read_packet(int fd, struct packet *pack) {
   }
   char *data = malloc(len + 1);
 
+  // read data field
   if ((rv = read_exact(fd, data, len)) <= 0) {
     return rv;
   }
-  data[len] = '\0'; // to make it a string
+  data[len] = '\0';
 
-  pack->type = type;
   pack->len = len;
+  strncpy(pack->username, username, USERNAME_LEN + 1);
   strncpy(pack->data, data, len + 1);
 
   free(data);

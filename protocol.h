@@ -12,15 +12,14 @@
 #include <string.h>
 
 #define MAX_DATA_SIZE 128
-#define MAX_PACKET_SIZE 136 // 4 + 4 + 128
-#define TYPE_SERVER 1
-#define TYPE_CLIENT 2
+#define USERNAME_LEN 16
+#define MAX_PACKET_SIZE 148 // 4 + 16 + 128
 
 #define PORT "3050"
 
 struct packet {
-  uint32_t type;
   uint32_t len;
+  char username[USERNAME_LEN + 1];
   char data[MAX_DATA_SIZE + 1];
 };
 

@@ -94,8 +94,9 @@ void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
   char msg[] = "Welcome to the chat room!";
 
   struct packet *pack = malloc(sizeof(struct packet));
-  pack->type = TYPE_SERVER;
+  // pack->type = TYPE_SERVER;
   pack->len = strlen(msg);
+  strcpy(pack->username, "server");
   strncpy(pack->data, msg, strlen(msg));
 
   if (send_packet(newfd, pack) == -1) {
@@ -176,7 +177,7 @@ int main(void) {
             remove_client(pfds, i, &fd_count);
             i--; // so we examine the fd we just swapped into this index
           } else {
-            printf("client (socket %d): %s\n", sender_fd, pack->data);
+            printf("<%s> %s\n", pack->username, pack->data);
 
 
             // Broadcast data to everyone, except the listener and the sender

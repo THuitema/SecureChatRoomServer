@@ -68,10 +68,21 @@ int main(int argc, char *argv[]) {
   struct pollfd *pfds = malloc(sizeof *pfds * fd_count);
   char buffer[MAX_DATA_SIZE];
 
-  if (argc != 2) {
-    fprintf(stderr, "usage: missing client hostname\n");
+  if (argc != 3) {
+    fprintf(stderr, "required fields: [hostname] [username]\n");
     exit(1);
   }
+
+  char *username_arg = argv[2];
+  if (strlen(username_arg) > USERNAME_LEN) {
+    fprintf(stderr, "error: username must be less than or equal to %d characters", USERNAME_LEN);
+    exit(1);
+  }
+
+  char username[USERNAME_LEN + 1];
+  strncpy(username, username_arg, USERNAME_LEN);
+  username[USERNAME_LEN] = '\0';
+  
 
   // Setup the file descriptor array for our socket connecting to server, and for standard input
   sockfd = setup_client(argv[1]);
@@ -82,7 +93,7 @@ int main(int argc, char *argv[]) {
   pfds[STDIN].fd = fileno(stdin);
   pfds[STDIN].events = POLLIN;
   pfds[STDIN].revents = 0;
-  
+
   // Main loop
   while (1) {
     int poll_count = poll(pfds, fd_count, -1);
@@ -99,7 +110,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
         exit(1);
       }
-      printf("server: %s\n", pack->data);
+      printf("<%s>: %s\n", pack->username, pack->data);
     }
 
     // Check if user has data to send
@@ -108,6 +119,7 @@ int main(int argc, char *argv[]) {
         perror("stdin");
         continue;
       }
+
       buffer[strcspn(buffer, "\n")] = 0; // removes \n character at end of input string
 
       // Don't send info if user just pressed enter key and nothing else
@@ -116,8 +128,8 @@ int main(int argc, char *argv[]) {
       }
 
       struct packet *pack = malloc(sizeof(struct packet));
-      pack->type = TYPE_CLIENT;
       pack->len = strlen(buffer);
+      strncpy(pack->username, username, USERNAME_LEN + 1);
       strncpy(pack->data, buffer, strlen(buffer));
 
       if (send_packet(sockfd, pack) == -1) {
