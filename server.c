@@ -94,7 +94,6 @@ void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
   char msg[] = "Welcome to the chat room!";
 
   struct packet *pack = malloc(sizeof(struct packet));
-  // pack->type = TYPE_SERVER;
   pack->len = strlen(msg);
   strcpy(pack->username, "server");
   strncpy(pack->data, msg, strlen(msg));
@@ -181,14 +180,18 @@ int main(void) {
 
 
             // Broadcast data to everyone, except the listener and the sender
-            // for(int j = 0; j < fd_count; j++) {
-            //   int dest_fd = pfds[j].fd;
-            //   if (dest_fd != serverfd && dest_fd != sender_fd) {
-            //     if (send(dest_fd, buffer, msg_bytes, 0) == -1) {
-            //       perror("send");
-            //     }
-            //   }
-            // }
+            for(int j = 0; j < fd_count; j++) {
+              int dest_fd = pfds[j].fd;
+              if (dest_fd != serverfd && dest_fd != sender_fd) {
+
+                if (send_packet(dest_fd, pack) == -1) {
+                  fprintf(stderr, "server: send");
+                  free(pack);
+                  exit(1);
+                }
+              }
+            }
+            free(pack);
           }
         }
         
