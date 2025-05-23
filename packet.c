@@ -30,7 +30,6 @@ int send_packet(int fd, struct packet *pack) {
     }
     bytes_sent += n;
     bytes_left -= n;
-    printf("sent %d bytes\n", n);
   }
 
   free(buffer);
@@ -42,11 +41,11 @@ int read_packet(int fd, struct packet *pack) {
   int rv;
 
   uint32_t type, len;
-  if (read_exact(fd, &type, 4) == -1) {
-    return -1;
+  if ((rv = read_exact(fd, &type, 4)) <= 0) {
+    return rv;
   }
-  if (read_exact(fd, &len, 4) == -1) {
-    return -1;
+  if ((rv = read_exact(fd, &len, 4)) <= 0) {
+    return rv;
   }
 
   type = ntohl(type);
@@ -67,7 +66,6 @@ int read_packet(int fd, struct packet *pack) {
   strncpy(pack->data, data, len + 1);
 
   free(data);
-
   return 1;
 }
 

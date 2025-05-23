@@ -110,6 +110,11 @@ int main(int argc, char *argv[]) {
       }
       buffer[strcspn(buffer, "\n")] = 0; // removes \n character at end of input string
 
+      // Don't send info if user just pressed enter key and nothing else
+      if (strlen(buffer) == 0) {
+        continue;
+      }
+
       struct packet *pack = malloc(sizeof(struct packet));
       pack->type = TYPE_CLIENT;
       pack->len = strlen(buffer);
@@ -124,10 +129,3 @@ int main(int argc, char *argv[]) {
   }
 
 } 
-
-
-
-
-
-
-

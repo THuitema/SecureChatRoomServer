@@ -103,10 +103,6 @@ void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
     exit(1);
   }
   free(pack);
-  
-  if (send(newfd, msg, sizeof msg, 0) == -1) {
-    perror("welcome message");
-  }
 }
 
 // Remove client by swapping with the last fd in the array, then decrementing fd_count
@@ -145,6 +141,7 @@ int main(void) {
     // run through existing connections looking for data to read
     for (int i = 0; i < fd_count; i++) {
       if (pfds[i].revents & (POLLIN | POLLHUP)) {
+        
 
         // If server if ready to read, then accept new connection
         if (pfds[i].fd == serverfd) {
@@ -164,24 +161,15 @@ int main(void) {
           // Handle regular client connection
           struct packet *pack = malloc(sizeof(struct packet));
 
-          // if (read_packet(pfds[0].fd, pack) == -1) {
-          //   fprintf(stderr, "server: recv");
-          //   exit(1);
-          // }
           int sender_fd = pfds[i].fd;
           int rv = read_packet(sender_fd, pack);
-          // printf("server: %s\n", pack->data);
-
-
-          // int msg_bytes = recv(pfds[i].fd, buffer, sizeof buffer, 0);
-          
 
           // Check for error or connection closed by client
           if (rv <= 0) {
             if (rv == 0) {
               printf("server: socket %d hung up\n", sender_fd);
             } else {
-              perror("server: recv");
+              perror("server");
             }
 
             close(sender_fd);
@@ -189,6 +177,8 @@ int main(void) {
             i--; // so we examine the fd we just swapped into this index
           } else {
             printf("client (socket %d): %s\n", sender_fd, pack->data);
+
+
             // Broadcast data to everyone, except the listener and the sender
             // for(int j = 0; j < fd_count; j++) {
             //   int dest_fd = pfds[j].fd;
@@ -200,6 +190,7 @@ int main(void) {
             // }
           }
         }
+        
       }
     }
   }
