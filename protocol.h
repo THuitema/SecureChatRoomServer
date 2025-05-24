@@ -13,16 +13,26 @@
 
 #define MAX_DATA_SIZE 128
 #define USERNAME_LEN 16
-#define MAX_PACKET_SIZE 148 // 4 + 16 + 128
+#define MAX_PACKET_SIZE 156 // 4 + 4 + 16 + 128
 
 #define PORT "3050"
+#define PACKET_CLIENT_JOIN 1
+#define PACKET_MESSAGE 2
 
-struct packet {
+struct client_join_packet {
+  uint32_t type;
+  char username[USERNAME_LEN + 1];
+  uint32_t public_key;
+};
+
+struct message_packet {
+  uint32_t type;
   uint32_t len;
   char username[USERNAME_LEN + 1];
   char data[MAX_DATA_SIZE + 1];
 };
 
-int send_packet(int fd, struct packet *pack);
-int read_packet(int fd, struct packet *pack);
+int send_packet(int fd, uint32_t type, void *pack); // struct packet *pack
+int read_packet(int fd, uint32_t expected_type, void *pack);
+int read_packet_type(int fd);
 

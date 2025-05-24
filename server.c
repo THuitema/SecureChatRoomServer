@@ -93,12 +93,13 @@ void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
   // Send welcome message
   char msg[] = "Welcome to the chat room!";
 
-  struct packet *pack = malloc(sizeof(struct packet));
+  struct message_packet *pack = malloc(sizeof(struct message_packet));
+  pack->type = PACKET_MESSAGE;
   pack->len = strlen(msg);
   strcpy(pack->username, "server");
   strncpy(pack->data, msg, strlen(msg));
 
-  if (send_packet(newfd, pack) == -1) {
+  if (send_packet(newfd, PACKET_MESSAGE, pack) == -1) {
     fprintf(stderr, "server: send");
     exit(1);
   }
@@ -159,14 +160,11 @@ int main(void) {
           }
         } else { 
           // Handle regular client connection
-          struct packet *pack = malloc(sizeof(struct packet));
-
           int sender_fd = pfds[i].fd;
-          int rv = read_packet(sender_fd, pack);
+          int type;
 
-          // Check for error or connection closed by client
-          if (rv <= 0) {
-            if (rv == 0) {
+          if ((type = read_packet_type(sender_fd)) <= 0) {
+            if (type == 0) {
               printf("server: socket %d hung up\n", sender_fd);
             } else {
               perror("server");
@@ -175,23 +173,46 @@ int main(void) {
             close(sender_fd);
             remove_client(pfds, i, &fd_count);
             i--; // so we examine the fd we just swapped into this index
-          } else {
-            printf("<%s> %s\n", pack->username, pack->data);
+          } else if (type == PACKET_MESSAGE) {
+            // Read message packet from client
 
+            struct message_packet *pack = malloc(sizeof(struct message_packet));
+            int rv = read_packet(sender_fd, PACKET_MESSAGE, pack);
 
-            // Broadcast data to everyone, except the listener and the sender
-            for(int j = 0; j < fd_count; j++) {
-              int dest_fd = pfds[j].fd;
-              if (dest_fd != serverfd && dest_fd != sender_fd) {
+            // Check for error or connection closed by client
+            if (rv <= 0) {
+              if (rv == 0) {
+                printf("server: socket %d hung up\n", sender_fd);
+              } else {
+                perror("server");
+              }
 
-                if (send_packet(dest_fd, pack) == -1) {
-                  fprintf(stderr, "server: send");
-                  free(pack);
-                  exit(1);
+              close(sender_fd);
+              remove_client(pfds, i, &fd_count);
+              i--; // so we examine the fd we just swapped into this index
+            } else {
+              printf("<%s> %s\n", pack->username, pack->data);
+
+              // Broadcast data to everyone, except the listener and the sender
+              for(int j = 0; j < fd_count; j++) {
+                int dest_fd = pfds[j].fd;
+                if (dest_fd != serverfd && dest_fd != sender_fd) {
+
+                  if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
+                    fprintf(stderr, "server: send");
+                    free(pack);
+                    exit(1);
+                  }
                 }
               }
+
+              free(pack);
             }
-            free(pack);
+          } else if (type == PACKET_CLIENT_JOIN) {
+            // New client packet (username & public key)
+            printf("server: handle client join case\n");
+          } else {
+            fprintf(stderr, "server: invalid packet type\n");
           }
         }
         

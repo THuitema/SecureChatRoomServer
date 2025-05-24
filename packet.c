@@ -1,21 +1,31 @@
 #include "protocol.h"
 
 int read_exact(int fd, void *buffer, int len);
+int send_message_packet(int fd, struct message_packet *pack);
+int read_message_packet(int fd, struct message_packet *pack);
 
-int send_packet(int fd, struct packet *pack) {
-  // add user ip field to packet?
+int send_packet(int fd, uint32_t type, void *pack) {
+  if (type == PACKET_MESSAGE) {
+    return send_message_packet(fd, (struct message_packet *)pack);
+  }
+  return -1;
+}
+
+int send_message_packet(int fd, struct message_packet *pack) {
   if (pack->len > MAX_DATA_SIZE) {
     return -1;
   }
 
-  uint32_t packet_size = 4 + USERNAME_LEN + pack->len;
+  uint32_t packet_size = 8 + USERNAME_LEN + pack->len;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
+  uint32_t packet_type = htonl(pack->type);
+  memcpy(buffer, &packet_type, 4);
   uint32_t packet_len = htonl(pack->len); // should be 16 + data len
-  memcpy(buffer, &packet_len, 4);
-  memcpy(buffer + 4, pack->username, USERNAME_LEN);
-  memcpy(buffer + 4 + USERNAME_LEN, pack->data, pack->len);
+  memcpy(buffer + 4, &packet_len, 4);
+  memcpy(buffer + 8, pack->username, USERNAME_LEN);
+  memcpy(buffer + 8 + USERNAME_LEN, pack->data, pack->len);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -36,7 +46,14 @@ int send_packet(int fd, struct packet *pack) {
   return 1;
 }
 
-int read_packet(int fd, struct packet *pack) {
+int read_packet(int fd, uint32_t expected_type, void *pack) {
+  if (expected_type == PACKET_MESSAGE) {
+    return read_message_packet(fd, (struct message_packet *)pack);
+  }
+  return -1;
+}
+
+int read_message_packet(int fd, struct message_packet *pack) {
   int rv;
   uint32_t len; 
   char username[USERNAME_LEN + 1];
@@ -65,6 +82,7 @@ int read_packet(int fd, struct packet *pack) {
   }
   data[len] = '\0';
 
+  pack->type = PACKET_MESSAGE;
   pack->len = len;
   strncpy(pack->username, username, USERNAME_LEN + 1);
   strncpy(pack->data, data, len + 1);
@@ -72,6 +90,18 @@ int read_packet(int fd, struct packet *pack) {
   free(data);
   return 1;
 }
+
+int read_packet_type(int fd) {
+  int type, rv;
+
+  if ((rv = read_exact(fd, &type, 4)) <= 0) {
+    return rv;
+  }
+
+  type = ntohl(type);
+  return type;
+}
+
 
 // Read exact number of bytes into buffer
 int read_exact(int fd, void *buffer, int len) {

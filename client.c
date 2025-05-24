@@ -105,12 +105,24 @@ int main(int argc, char *argv[]) {
 
     // Check if server has sent data
     if (pfds[SERVER].revents & (POLLIN | POLLHUP)) {
-      struct packet *pack = malloc(sizeof(struct packet));
-      if (read_packet(pfds[0].fd, pack) <= 0) {
-        fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
-        exit(1);
+      int type;
+
+      if ((type = read_packet_type(sockfd)) <= 0) {
+        fprintf(stderr, "server: read_packet_type\n");
+      } else if (type == PACKET_MESSAGE) {
+        // Read message from server
+
+        struct message_packet *pack = malloc(sizeof(struct message_packet));
+        if (read_packet(pfds[0].fd, PACKET_MESSAGE, pack) <= 0) {
+          fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
+          exit(1);
+        }
+        printf("<%s>: %s\n", pack->username, pack->data);
+
+      } else {
+        fprintf(stderr, "client: invalid packet type\n");
       }
-      printf("<%s>: %s\n", pack->username, pack->data);
+      
     }
 
     // Check if user has data to send
@@ -127,12 +139,13 @@ int main(int argc, char *argv[]) {
         continue;
       }
 
-      struct packet *pack = malloc(sizeof(struct packet));
+      struct message_packet *pack = malloc(sizeof(struct message_packet));
+      pack->type = PACKET_MESSAGE;
       pack->len = strlen(buffer);
       strncpy(pack->username, username, USERNAME_LEN + 1);
       strncpy(pack->data, buffer, strlen(buffer));
 
-      if (send_packet(sockfd, pack) == -1) {
+      if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
         fprintf(stderr, "client: send");
         exit(1);
       }
