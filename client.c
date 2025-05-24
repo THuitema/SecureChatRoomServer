@@ -131,6 +131,11 @@ int main(int argc, char *argv[]) {
       int type;
 
       if ((type = read_packet_type(sockfd)) <= 0) {
+        if (type == 0) { // server has disconnected
+          close(sockfd);
+          fprintf(stderr, "Server has disconnected, bye!\n");
+          exit(1);
+        }
         fprintf(stderr, "server: read_packet_type\n");
       } else if (type == PACKET_MESSAGE) {
         // Read message from server
