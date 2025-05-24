@@ -208,9 +208,50 @@ int main(void) {
 
               free(pack);
             }
-          } else if (type == PACKET_CLIENT_JOIN) {
+          } else if (type == PACKET_CLIENT_HELLO) {
             // New client packet (username & public key)
-            printf("server: handle client join case\n");
+            struct client_hello_packet *hello_pack = malloc(sizeof(struct client_hello_packet));
+            int rv = read_packet(sender_fd, PACKET_CLIENT_HELLO, hello_pack);
+            
+            // **** Add client to client array, storing fd, username, public key
+
+            // Check for error or connection closed by client
+            if (rv <= 0) {
+              if (rv == 0) {
+                printf("server: socket %d hung up\n", sender_fd);
+              } else {
+                perror("server");
+              }
+
+              close(sender_fd);
+              remove_client(pfds, i, &fd_count);
+              i--; // so we examine the fd we just swapped into this index
+            } else {
+              // Broadcast to room that new user has joined
+              char buffer[MAX_DATA_SIZE + 1];
+              snprintf(buffer, sizeof(buffer), "%s has joined the room!", hello_pack->username);
+
+              struct message_packet *pack = malloc(sizeof(struct message_packet));
+              pack->type = PACKET_MESSAGE;
+              pack->len = strlen(buffer);
+              strcpy(pack->username, "server");
+              strncpy(pack->data, buffer, strlen(buffer));
+
+              for(int j = 0; j < fd_count; j++) {
+                int dest_fd = pfds[j].fd;
+                if (dest_fd != serverfd && dest_fd != sender_fd) {
+
+                  if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
+                    fprintf(stderr, "server: send");
+                    free(pack);
+                    free(hello_pack);
+                    exit(1);
+                  }
+                }
+              }
+              free(pack);
+              free(hello_pack);
+            }
           } else {
             fprintf(stderr, "server: invalid packet type\n");
           }

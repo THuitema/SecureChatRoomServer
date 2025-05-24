@@ -2,11 +2,15 @@
 
 int read_exact(int fd, void *buffer, int len);
 int send_message_packet(int fd, struct message_packet *pack);
+int send_hello_packet(int fd, struct client_hello_packet *pack);
 int read_message_packet(int fd, struct message_packet *pack);
+int read_hello_packet(int fd, struct client_hello_packet *pack);
 
 int send_packet(int fd, uint32_t type, void *pack) {
   if (type == PACKET_MESSAGE) {
     return send_message_packet(fd, (struct message_packet *)pack);
+  } else if (type == PACKET_CLIENT_HELLO) {
+    return send_hello_packet(fd, (struct client_hello_packet *)pack);
   }
   return -1;
 }
@@ -46,9 +50,41 @@ int send_message_packet(int fd, struct message_packet *pack) {
   return 1;
 }
 
+int send_hello_packet(int fd, struct client_hello_packet *pack) {
+  uint32_t packet_size = 4 + USERNAME_LEN + PUBLIC_KEY_LEN;
+  char *buffer = malloc(packet_size);
+
+  // write header, converting info to network byte order
+  uint32_t packet_type = htonl(pack->type);
+  memcpy(buffer, &packet_type, 4);
+
+  memcpy(buffer + 4, pack->username, USERNAME_LEN);
+  memcpy(buffer + 4 + USERNAME_LEN, pack->public_key, PUBLIC_KEY_LEN);
+
+  // repeat send() calls until all of packet is sent
+  uint32_t bytes_sent = 0;
+  uint32_t bytes_left = packet_size;
+  uint32_t n;
+
+  while (bytes_sent < packet_size) {
+    n = send(fd, buffer + bytes_sent, bytes_left, 0);
+    if (n == -1) {
+      return -1;
+    }
+    bytes_sent += n;
+    bytes_left -= n;
+  }
+
+  free(buffer);
+
+  return 1;
+}
+
 int read_packet(int fd, uint32_t expected_type, void *pack) {
   if (expected_type == PACKET_MESSAGE) {
     return read_message_packet(fd, (struct message_packet *)pack);
+  } else if (expected_type == PACKET_CLIENT_HELLO) {
+    return read_hello_packet(fd, (struct client_hello_packet *)pack);
   }
   return -1;
 }
@@ -90,6 +126,30 @@ int read_message_packet(int fd, struct message_packet *pack) {
   free(data);
   return 1;
 }
+
+int read_hello_packet(int fd, struct client_hello_packet *pack) {
+  int rv;
+  char username[USERNAME_LEN + 1];
+  unsigned char public_key[PUBLIC_KEY_LEN];
+
+  // read username field
+  if ((rv = read_exact(fd, username, USERNAME_LEN)) <= 0) {
+    return rv;
+  }
+  username[USERNAME_LEN] = '\0';
+
+  // read public key field
+  if ((rv = read_exact(fd, public_key, PUBLIC_KEY_LEN)) <= 0) {
+    return rv;
+  }
+
+  pack->type = PACKET_CLIENT_HELLO;
+  strncpy(pack->username, username, USERNAME_LEN + 1);
+  memcpy(pack->public_key, public_key, PUBLIC_KEY_LEN);
+
+  return 1;
+}
+
 
 int read_packet_type(int fd) {
   int type, rv;

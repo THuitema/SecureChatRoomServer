@@ -62,6 +62,24 @@ int setup_client(char *host) {
   return sockfd;
 }
 
+int send_client_hello(int sockfd, char *username) {
+  // Send client join packet to server, containing username and public key
+  struct client_hello_packet *pack = malloc(sizeof(struct client_hello_packet));
+
+  pack->type = PACKET_CLIENT_HELLO;
+  strncpy(pack->username, username, USERNAME_LEN + 1);
+
+  unsigned char public_key[PUBLIC_KEY_LEN] = {0}; // REPLACE WITH PUBLIC KEY GENERATION
+  memcpy(pack->public_key, public_key, PUBLIC_KEY_LEN);
+
+  if (send_packet(sockfd, PACKET_CLIENT_HELLO, pack) < 0) {
+    free(pack);
+    return -1;
+  }
+  free(pack);
+  return 1;
+}
+
 int main(int argc, char *argv[]) {
   int sockfd;
   int fd_count = 2;
@@ -83,9 +101,14 @@ int main(int argc, char *argv[]) {
   strncpy(username, username_arg, USERNAME_LEN);
   username[USERNAME_LEN] = '\0';
   
+  sockfd = setup_client(argv[1]);
+
+  if (send_client_hello(sockfd, username) < 0) {
+    fprintf(stderr, "client: send client hello\n");
+    exit(1);
+  }
 
   // Setup the file descriptor array for our socket connecting to server, and for standard input
-  sockfd = setup_client(argv[1]);
   pfds[SERVER].fd = sockfd;
   pfds[SERVER].events = POLLIN;
   pfds[SERVER].revents = 0;
@@ -111,7 +134,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "server: read_packet_type\n");
       } else if (type == PACKET_MESSAGE) {
         // Read message from server
-
         struct message_packet *pack = malloc(sizeof(struct message_packet));
         if (read_packet(pfds[0].fd, PACKET_MESSAGE, pack) <= 0) {
           fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
