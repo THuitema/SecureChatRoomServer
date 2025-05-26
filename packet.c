@@ -36,7 +36,6 @@ int send_message_packet(int fd, struct message_packet *pack) {
 
   uint32_t message_len = htonl(pack->len); 
   memcpy(buffer + 4 + (2 * USERNAME_LEN), &message_len, 4);
-  // memcpy(buffer + 3, pack->username, USERNAME_LEN);
   memcpy(buffer + 4 + (2 * USERNAME_LEN) + 4, pack->message, pack->len);
 
   // repeat send() calls until all of packet is sent

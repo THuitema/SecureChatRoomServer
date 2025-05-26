@@ -2,6 +2,7 @@
 ** client.c -- user can send messages, encapsulated as packets when sent to server
 */
 #include "protocol.h"
+#include <sodium.h>
 
 #define SERVER 0
 #define STDIN 1 
@@ -55,7 +56,6 @@ int setup_client(char *host) {
   }
 
   inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), conn_ip, sizeof conn_ip);
-  // printf("client: connecting to %s\n", conn_ip);
 
   freeaddrinfo(servinfo);
 
@@ -138,6 +138,11 @@ int main(int argc, char *argv[]) {
   
   sockfd = setup_client(argv[1]);
 
+  // Confirm sodium library initialized
+  if (sodium_init() < 0) {
+    exit(1);
+  } 
+  
   // ADD PUBLIC KEY GENERATION (and private key)
   uint32_t public_key_len = PUBLIC_KEY_LEN;
   uint8_t public_key[PUBLIC_KEY_LEN] = {0};
@@ -195,12 +200,13 @@ int main(int argc, char *argv[]) {
         struct hello_packet *hello_pack = malloc(sizeof(struct hello_packet));
         if (read_packet(pfds[SERVER].fd, PACKET_HELLO, hello_pack) <= 0) {
           close(sockfd);
+          free(hello_pack);        
           fprintf(stderr, "client: recv PACKET_HELLO\n");
           exit(1);
         }
         add_user(&users, hello_pack, &user_count, &user_size);
-        // dont need to broadcast anything, just save the info
-        
+        free(hello_pack);    
+
       } else if (type == PACKET_GOODBYE) {
 
         struct goodbye_packet *pack = malloc(sizeof(struct goodbye_packet));
@@ -260,5 +266,4 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-
 } 

@@ -1,12 +1,14 @@
 CC = gcc
-CFLAGS = -g -Wall -fsanitize=address,undefined
+CFLAGS = -g -Wall -fsanitize=address,undefined -I/opt/homebrew/include
+LDFLAGS = -L/opt/homebrew/lib -lsodium
+
 all: client server
 
 client: client.o packet.o
-	$(CC) $(CFLAGS) -o client client.o packet.o
+	$(CC) $(CFLAGS) -o client client.o packet.o $(LDFLAGS)
 
 server: server.o packet.o
-	$(CC) $(CFLAGS) -o server server.o packet.o
+	$(CC) $(CFLAGS) -o server server.o packet.o $(LDFLAGS)
 
 client.o: client.c protocol.h
 	$(CC) $(CFLAGS) -c client.c -o client.o

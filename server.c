@@ -3,6 +3,7 @@
 */
 
 #include "protocol.h"
+#include <sodium.h>
 
 #define MAX_QUEUE_SIZE 10
 
@@ -159,6 +160,11 @@ int main(void) {
   memset(&users[0], 0, sizeof(struct user_info));
   fd_count = 1;
 
+  // Confirm sodium library initialized
+  if (sodium_init() < 0) {
+    exit(1);
+  } 
+
   // main loop
   while (1) {
     int poll_count = poll(pfds, fd_count, -1);
@@ -234,25 +240,6 @@ int main(void) {
                 exit(1);
               }
               free(pack);
-              // *** New implementation
-              // 1. read_packet() stays the same. DO NOT DECRYPT
-              // 2. use lookup function to search through users and get fd for receiptient
-              // 3. send same packet you read to that fd (NO LOOP)
-
-              // Broadcast data to everyone, except the listener and the sender
-              // for(int j = 0; j < fd_count; j++) {
-              //   int dest_fd = pfds[j].fd;
-              //   if (dest_fd != serverfd && dest_fd != sender_fd) {
-
-              //     if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
-              //       fprintf(stderr, "server: send");
-              //       free(pack);
-              //       exit(1);
-              //     }
-              //   }
-              // }
-
-              // free(pack);
             }
           } else if (type == PACKET_HELLO) {
             // New user packet (username & public key)
@@ -271,10 +258,9 @@ int main(void) {
               remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
-              add_user_info(&users, hello_pack, newfd, fd_count, fd_size);
-              // *** Broadcast hello packet to all other users 
-              // Also, send hello packet to new user for each existing user
-              // (users should print welcome message themselves, OR we send a second message packet from server that we have already)          
+              add_user_info(&users, hello_pack, newfd, fd_count, fd_size);     
+
+              // Broadcast hello packet to all other users, and send hello packet to new user for each existing user
               for (int j = 0; j < fd_count; j++) {
                 int dest_fd = pfds[j].fd;
                 if (dest_fd != serverfd && dest_fd != sender_fd) {
