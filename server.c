@@ -100,14 +100,26 @@ void add_user_info(struct user_info *users[], struct hello_packet *pack, int new
   memcpy((*users)[fd_count-1].public_key, pack->public_key, PUBLIC_KEY_LEN);
 }
 
-// Remove user by swapping with the last fd in the array, then decrementing fd_count
-// void remove_fd(struct pollfd pfds[], int remove_index, int *fd_count) {
-//   pfds[remove_index] = pfds[*fd_count - 1]; 
-//   (*fd_count)--;
-// }
-
 void remove_user(struct pollfd pfds[], struct user_info users[], int index, int *fd_count) {
-  // for future, broadcast message that user has left, and all users remove user from their collections (may need new packet type)
+  int user_fd = users[index].fd;
+
+  // broadcast message that user has left
+  struct goodbye_packet *pack = malloc(sizeof(struct goodbye_packet));
+  pack->type = PACKET_GOODBYE;
+  strncpy(pack->username, users[index].username, USERNAME_LEN + 1);
+
+  for (int i = 1; i < *fd_count; i++) { // server fd is index 0
+    int dest_fd = pfds[i].fd;
+    if (dest_fd != user_fd) {
+      if (send_packet(dest_fd, PACKET_GOODBYE, pack) == -1) {
+        fprintf(stderr, "server: send");
+        free(pack);
+        exit(1);
+      }
+    }
+  }
+  free(pack);
+
   users[index] = users[*fd_count - 1];
   pfds[index] = pfds[*fd_count - 1]; 
   (*fd_count)--;

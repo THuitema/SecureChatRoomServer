@@ -16,8 +16,9 @@
 #define PUBLIC_KEY_LEN 16
 
 #define PORT "3050"
-#define PACKET_HELLO ((uint8_t)1)
-#define PACKET_MESSAGE ((uint8_t)2)
+#define PACKET_HELLO 1
+#define PACKET_MESSAGE 2
+#define PACKET_GOODBYE 3
 
 struct hello_packet {
   uint32_t type;
@@ -33,6 +34,11 @@ struct message_packet {
   uint32_t len;
   // char username[USERNAME_LEN + 1];
   char message[MAX_MESSAGE_LEN];
+};
+
+struct goodbye_packet {
+  uint32_t type;
+  char username[USERNAME_LEN + 1];
 };
 
 struct user_info {

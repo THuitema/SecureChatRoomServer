@@ -77,6 +77,23 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
   (*user_count)++;
 }
 
+int remove_user(struct user_info users[], char *username, int *user_count) {
+  if (!username) {
+    return -1;
+  }
+
+  for (int i = 0; i < *user_count; i++) {
+    if (strcmp(users[i].username, username) == 0) {
+      // Swap with last user and decrement count
+      users[i] = users[*user_count - 1];
+      (*user_count)--;
+      return 1;
+    }
+  }
+
+  return -1;
+}
+
 int send_client_hello(int sockfd, char *username, uint32_t public_key_len, uint8_t public_key[]) {
   // Send client join packet to server, containing username and public key
   struct hello_packet *pack = malloc(sizeof(struct hello_packet));
@@ -184,6 +201,23 @@ int main(int argc, char *argv[]) {
         add_user(&users, hello_pack, &user_count, &user_size);
         // dont need to broadcast anything, just save the info
         
+      } else if (type == PACKET_GOODBYE) {
+
+        struct goodbye_packet *pack = malloc(sizeof(struct goodbye_packet));
+        if (read_packet(pfds[SERVER].fd, PACKET_GOODBYE, pack) <= 0) {
+          close(sockfd);
+          fprintf(stderr, "client: recv");
+          exit(1);
+        }
+
+        // remove the user from users (search by username)
+        if (remove_user(users, pack->username, &user_count) == -1) {
+          fprintf(stderr, "client: remove_user\n");
+          close(sockfd);
+          exit(1);
+        }
+        printf("user removed successfully\n");
+
       } else {
         fprintf(stderr, "client: invalid packet type, type=%d\n", type);
       }
