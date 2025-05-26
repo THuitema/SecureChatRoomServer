@@ -62,17 +62,31 @@ int setup_client(char *host) {
   return sockfd;
 }
 
-int send_client_hello(int sockfd, char *username) {
+void add_user(struct user_info *users[], struct hello_packet *pack, int *user_count, int *user_size) {
+  // If we don't have room, realloc twice the current size of the array
+  if (*user_count == *user_size) {
+    *user_size *= 2;
+    *users = realloc(*users, sizeof(**users) * (*user_size));
+  }
+
+  (*users)[*user_count].fd = -1; // we don't care about this for client side, server handles file desciptors
+  strncpy((*users)[*user_count].username, pack->username, USERNAME_LEN+1);
+  (*users)[*user_count].public_key_len = pack->public_key_len;
+  memcpy((*users)[*user_count].public_key, pack->public_key, PUBLIC_KEY_LEN);
+
+  (*user_count)++;
+}
+
+int send_client_hello(int sockfd, char *username, uint32_t public_key_len, uint8_t public_key[]) {
   // Send client join packet to server, containing username and public key
-  struct client_hello_packet *pack = malloc(sizeof(struct client_hello_packet));
+  struct hello_packet *pack = malloc(sizeof(struct hello_packet));
 
-  pack->type = PACKET_CLIENT_HELLO;
+  pack->type = PACKET_HELLO;
   strncpy(pack->username, username, USERNAME_LEN + 1);
-
-  unsigned char public_key[PUBLIC_KEY_LEN] = {0}; // REPLACE WITH PUBLIC KEY GENERATION
+  pack->public_key_len = public_key_len;
   memcpy(pack->public_key, public_key, PUBLIC_KEY_LEN);
 
-  if (send_packet(sockfd, PACKET_CLIENT_HELLO, pack) < 0) {
+  if (send_packet(sockfd, PACKET_HELLO, pack) < 0) {
     free(pack);
     return -1;
   }
@@ -82,9 +96,13 @@ int send_client_hello(int sockfd, char *username) {
 
 int main(int argc, char *argv[]) {
   int sockfd;
-  int fd_count = 2;
+  const int fd_count = 2; // one for server, one for stdin (user input)
   struct pollfd *pfds = malloc(sizeof *pfds * fd_count);
-  char buffer[MAX_DATA_SIZE];
+  char buffer[MAX_MESSAGE_LEN];
+
+  int user_count = 0;
+  int user_size = 5;
+  struct user_info *users = malloc(sizeof *users * user_size);
 
   if (argc != 3) {
     fprintf(stderr, "required fields: [hostname] [username]\n");
@@ -103,7 +121,11 @@ int main(int argc, char *argv[]) {
   
   sockfd = setup_client(argv[1]);
 
-  if (send_client_hello(sockfd, username) < 0) {
+  // ADD PUBLIC KEY GENERATION (and private key)
+  uint32_t public_key_len = PUBLIC_KEY_LEN;
+  uint8_t public_key[PUBLIC_KEY_LEN] = {0};
+
+  if (send_client_hello(sockfd, username, public_key_len, public_key) < 0) {
     fprintf(stderr, "client: send client hello\n");
     exit(1);
   }
@@ -129,7 +151,7 @@ int main(int argc, char *argv[]) {
     // Check if server has sent data
     if (pfds[SERVER].revents & (POLLIN | POLLHUP)) {
       int type;
-
+      
       if ((type = read_packet_type(sockfd)) <= 0) {
         if (type == 0) { // server has disconnected
           close(sockfd);
@@ -138,23 +160,39 @@ int main(int argc, char *argv[]) {
         }
         fprintf(stderr, "server: read_packet_type\n");
       } else if (type == PACKET_MESSAGE) {
+
         // Read message from server
         struct message_packet *pack = malloc(sizeof(struct message_packet));
-        if (read_packet(pfds[0].fd, PACKET_MESSAGE, pack) <= 0) {
-          fprintf(stderr, "client: recv"); // ERROR HAPPENING HERE
+        if (read_packet(pfds[SERVER].fd, PACKET_MESSAGE, pack) <= 0) {
+          close(sockfd);
+          fprintf(stderr, "client: recv");
           exit(1);
         }
-        printf("<%s>: %s\n", pack->username, pack->data);
 
+        // DECRYPT MESSAGE
+        printf("<%s>: %s\n", pack->sender, pack->message);
+
+      } else if (type == PACKET_HELLO) {
+
+        // read packet in and add to users (function similar to add_fd, but dont edit pfds)
+        struct hello_packet *hello_pack = malloc(sizeof(struct hello_packet));
+        if (read_packet(pfds[SERVER].fd, PACKET_HELLO, hello_pack) <= 0) {
+          close(sockfd);
+          fprintf(stderr, "client: recv PACKET_HELLO\n");
+          exit(1);
+        }
+        add_user(&users, hello_pack, &user_count, &user_size);
+        // dont need to broadcast anything, just save the info
+        
       } else {
-        fprintf(stderr, "client: invalid packet type\n");
+        fprintf(stderr, "client: invalid packet type, type=%d\n", type);
       }
       
     }
 
     // Check if user has data to send
     if (pfds[STDIN].revents & (POLLIN | POLLHUP)) {
-      if (fgets(buffer, MAX_DATA_SIZE, stdin) == NULL) {
+      if (fgets(buffer, MAX_MESSAGE_LEN, stdin) == NULL) {
         perror("stdin");
         continue;
       }
@@ -166,17 +204,23 @@ int main(int argc, char *argv[]) {
         continue;
       }
 
-      struct message_packet *pack = malloc(sizeof(struct message_packet));
-      pack->type = PACKET_MESSAGE;
-      pack->len = strlen(buffer);
-      strncpy(pack->username, username, USERNAME_LEN + 1);
-      strncpy(pack->data, buffer, strlen(buffer));
+      // Create packet for each user
+      for (int i = 0; i < user_count; i++) {
+        // *** ENCRYPT MESSAGE HERE USING RECEIPTIENT's PUBLIC KEY
+        struct message_packet *pack = malloc(sizeof(struct message_packet));
+        pack->type = PACKET_MESSAGE;
+        strncpy(pack->sender, username, USERNAME_LEN + 1);
+        strncpy(pack->receiptient, users[i].username, USERNAME_LEN + 1);
+        pack->len = strlen(buffer);
+        strncpy(pack->message, buffer, strlen(buffer));
 
-      if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
-        fprintf(stderr, "client: send");
-        exit(1);
+        if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
+          fprintf(stderr, "client: send");
+          free(pack);
+          exit(1);
+        }
+        free(pack);
       }
-      free(pack);
     }
   }
 

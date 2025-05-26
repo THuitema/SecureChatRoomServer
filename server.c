@@ -77,39 +77,55 @@ int setup_server() {
   return sockfd;
 }
 
-// Add a new file descriptor to the set for poll()
-void add_client(struct pollfd *pfds[], int newfd, int *fd_count, int *fd_size) {
+// Add a new file descriptor to the set for poll(). Called after server accept()'s connection
+void add_fd(struct pollfd *pfds[], struct user_info *users[], int newfd, int *fd_count, int *fd_size) {
   // If we don't have room, realloc twice the current size of the array
   if (*fd_count == *fd_size) {
     *fd_size *= 2;
     *pfds = realloc(*pfds, sizeof(**pfds) * (*fd_size));
+    *users = realloc(*users, sizeof(**users) * (*fd_size));
   }
 
   (*pfds)[*fd_count].fd = newfd;
   (*pfds)[*fd_count].events = POLLIN;
   (*pfds)[*fd_count].revents = 0;
+
   (*fd_count)++;
-
-  // Send welcome message
-  char msg[] = "Welcome to the chat room!";
-
-  struct message_packet *pack = malloc(sizeof(struct message_packet));
-  pack->type = PACKET_MESSAGE;
-  pack->len = strlen(msg);
-  strcpy(pack->username, "server");
-  strncpy(pack->data, msg, strlen(msg));
-
-  if (send_packet(newfd, PACKET_MESSAGE, pack) == -1) {
-    fprintf(stderr, "server: send");
-    exit(1);
-  }
-  free(pack);
 }
 
-// Remove client by swapping with the last fd in the array, then decrementing fd_count
-void remove_client(struct pollfd pfds[], int remove_index, int *fd_count) {
-  pfds[remove_index] = pfds[*fd_count - 1]; 
+void add_user_info(struct user_info *users[], struct hello_packet *pack, int newfd, int fd_count, int fd_size) {
+  (*users)[fd_count-1].fd = newfd;
+  strncpy((*users)[fd_count-1].username, pack->username, USERNAME_LEN+1);
+  (*users)[fd_count-1].public_key_len = pack->public_key_len;
+  memcpy((*users)[fd_count-1].public_key, pack->public_key, PUBLIC_KEY_LEN);
+}
+
+// Remove user by swapping with the last fd in the array, then decrementing fd_count
+// void remove_fd(struct pollfd pfds[], int remove_index, int *fd_count) {
+//   pfds[remove_index] = pfds[*fd_count - 1]; 
+//   (*fd_count)--;
+// }
+
+void remove_user(struct pollfd pfds[], struct user_info users[], int index, int *fd_count) {
+  // for future, broadcast message that user has left, and all users remove user from their collections (may need new packet type)
+  users[index] = users[*fd_count - 1];
+  pfds[index] = pfds[*fd_count - 1]; 
   (*fd_count)--;
+}
+
+// Lookup user by username and return its fd. Returns -1 if not found
+int get_fd(struct user_info users[], char *username, int fd_count) {
+  if (!username) {
+    return -1;
+  }
+
+  for (int i = 0; i < fd_count; i++) {
+    if (strcmp(users[i].username, username) == 0) {
+      return users[i].fd;
+    }
+  }
+
+  return -1;
 }
 
 int main(void) {
@@ -117,17 +133,18 @@ int main(void) {
   struct sockaddr_storage conn_addr;
   socklen_t addrlen;
 
-  // char buffer[MAX_DATA_SIZE];
   char conn_ip[INET6_ADDRSTRLEN];
 
   int fd_count = 0;
   int fd_size = 5;
   struct pollfd *pfds = malloc(sizeof *pfds * fd_size);
+  struct user_info *users = malloc(sizeof *users * fd_size);
 
   serverfd = setup_server();
 
   pfds[0].fd = serverfd;
   pfds[0].events = POLLIN;
+  memset(&users[0], 0, sizeof(struct user_info));
   fd_count = 1;
 
   // main loop
@@ -148,18 +165,17 @@ int main(void) {
         if (pfds[i].fd == serverfd) {
           addrlen = sizeof conn_addr;
           newfd = accept(serverfd, (struct sockaddr *)&conn_addr, &addrlen);
-
           if (newfd == -1) {
             perror("server: accept");
           } else {
-            add_client(&pfds, newfd, &fd_count, &fd_size);
-
+            add_fd(&pfds, &users, newfd, &fd_count, &fd_size);
+            
             printf("server: new connection from %s on socket %d\n",
               inet_ntop(conn_addr.ss_family, get_in_addr((struct sockaddr*)&conn_addr), conn_ip, INET6_ADDRSTRLEN),
               newfd);
           }
         } else { 
-          // Handle regular client connection
+          // Handle regular user connection
           int sender_fd = pfds[i].fd;
           int type;
 
@@ -171,15 +187,15 @@ int main(void) {
             }
 
             close(sender_fd);
-            remove_client(pfds, i, &fd_count);
+            remove_user(pfds, users, i, &fd_count);
             i--; // so we examine the fd we just swapped into this index
           } else if (type == PACKET_MESSAGE) {
-            // Read message packet from client
+            // Read message packet from user
 
             struct message_packet *pack = malloc(sizeof(struct message_packet));
             int rv = read_packet(sender_fd, PACKET_MESSAGE, pack);
 
-            // Check for error or connection closed by client
+            // Check for error or connection closed by user
             if (rv <= 0) {
               if (rv == 0) {
                 printf("server: socket %d hung up\n", sender_fd);
@@ -188,34 +204,50 @@ int main(void) {
               }
 
               close(sender_fd);
-              remove_client(pfds, i, &fd_count);
+              remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
-              printf("<%s> %s\n", pack->username, pack->data);
+              printf("<from:%s> <to:%s> \"%s\"\n", pack->sender, pack->receiptient, pack->message);
+
+              // Send message to receiptient without decrypting message
+              int dest_fd;
+              if ((dest_fd = get_fd(users, pack->receiptient, fd_count)) == -1) {
+                fprintf(stderr, "server: get_fd\n");
+                free(pack);
+              }
+
+              if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
+                fprintf(stderr, "server: send\n");
+                free(pack);
+                exit(1);
+              }
+              free(pack);
+              // *** New implementation
+              // 1. read_packet() stays the same. DO NOT DECRYPT
+              // 2. use lookup function to search through users and get fd for receiptient
+              // 3. send same packet you read to that fd (NO LOOP)
 
               // Broadcast data to everyone, except the listener and the sender
-              for(int j = 0; j < fd_count; j++) {
-                int dest_fd = pfds[j].fd;
-                if (dest_fd != serverfd && dest_fd != sender_fd) {
+              // for(int j = 0; j < fd_count; j++) {
+              //   int dest_fd = pfds[j].fd;
+              //   if (dest_fd != serverfd && dest_fd != sender_fd) {
 
-                  if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
-                    fprintf(stderr, "server: send");
-                    free(pack);
-                    exit(1);
-                  }
-                }
-              }
+              //     if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
+              //       fprintf(stderr, "server: send");
+              //       free(pack);
+              //       exit(1);
+              //     }
+              //   }
+              // }
 
-              free(pack);
+              // free(pack);
             }
-          } else if (type == PACKET_CLIENT_HELLO) {
-            // New client packet (username & public key)
-            struct client_hello_packet *hello_pack = malloc(sizeof(struct client_hello_packet));
-            int rv = read_packet(sender_fd, PACKET_CLIENT_HELLO, hello_pack);
-            
-            // **** Add client to client array, storing fd, username, public key
+          } else if (type == PACKET_HELLO) {
+            // New user packet (username & public key)
+            struct hello_packet *hello_pack = malloc(sizeof(struct hello_packet));
+            int rv = read_packet(sender_fd, PACKET_HELLO, hello_pack);
 
-            // Check for error or connection closed by client
+            // Check for error or connection closed by user
             if (rv <= 0) {
               if (rv == 0) {
                 printf("server: socket %d hung up\n", sender_fd);
@@ -224,39 +256,44 @@ int main(void) {
               }
 
               close(sender_fd);
-              remove_client(pfds, i, &fd_count);
+              remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
-              // Broadcast to room that new user has joined
-              char buffer[MAX_DATA_SIZE + 1];
-              snprintf(buffer, sizeof(buffer), "%s has joined the room!", hello_pack->username);
-
-              struct message_packet *pack = malloc(sizeof(struct message_packet));
-              pack->type = PACKET_MESSAGE;
-              pack->len = strlen(buffer);
-              strcpy(pack->username, "server");
-              strncpy(pack->data, buffer, strlen(buffer));
-
-              for(int j = 0; j < fd_count; j++) {
+              add_user_info(&users, hello_pack, newfd, fd_count, fd_size);
+              // *** Broadcast hello packet to all other users 
+              // Also, send hello packet to new user for each existing user
+              // (users should print welcome message themselves, OR we send a second message packet from server that we have already)          
+              for (int j = 0; j < fd_count; j++) {
                 int dest_fd = pfds[j].fd;
                 if (dest_fd != serverfd && dest_fd != sender_fd) {
-
-                  if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
+                  if (send_packet(dest_fd, PACKET_HELLO, hello_pack) == -1) {
                     fprintf(stderr, "server: send");
-                    free(pack);
                     free(hello_pack);
                     exit(1);
                   }
+                  
+                  // Send hello packet to new user for each existing user
+                  struct hello_packet *existing_user_hello = malloc(sizeof(struct hello_packet));
+                  existing_user_hello->type = PACKET_HELLO;
+                  strncpy(existing_user_hello->username, users[j].username, USERNAME_LEN + 1);
+                  existing_user_hello->public_key_len = users[j].public_key_len;
+                  memcpy(existing_user_hello->public_key, users[j].public_key, users[j].public_key_len);
+                  
+                  if (send_packet(sender_fd, PACKET_HELLO, existing_user_hello) == -1) {
+                    fprintf(stderr, "server: send existing user hello\n");
+                    free(existing_user_hello);
+                    free(hello_pack);
+                    exit(1);
+                  }
+                  free(existing_user_hello);
                 }
               }
-              free(pack);
               free(hello_pack);
             }
           } else {
             fprintf(stderr, "server: invalid packet type\n");
           }
         }
-        
       }
     }
   }

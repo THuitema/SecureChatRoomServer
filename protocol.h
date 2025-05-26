@@ -11,26 +11,35 @@
 #include <poll.h>
 #include <string.h>
 
-#define MAX_DATA_SIZE 128
+#define MAX_MESSAGE_LEN 1024
 #define USERNAME_LEN 16
-#define MAX_PACKET_SIZE 156 // 4 + 4 + 16 + 128
 #define PUBLIC_KEY_LEN 16
 
 #define PORT "3050"
-#define PACKET_CLIENT_HELLO 1
-#define PACKET_MESSAGE 2
+#define PACKET_HELLO ((uint8_t)1)
+#define PACKET_MESSAGE ((uint8_t)2)
 
-struct client_hello_packet {
+struct hello_packet {
   uint32_t type;
   char username[USERNAME_LEN + 1];
-  unsigned char public_key[PUBLIC_KEY_LEN];
+  uint32_t public_key_len;
+  uint8_t public_key[PUBLIC_KEY_LEN];
 };
 
 struct message_packet {
   uint32_t type;
+  char sender[USERNAME_LEN + 1];
+  char receiptient[USERNAME_LEN + 1];
   uint32_t len;
+  // char username[USERNAME_LEN + 1];
+  char message[MAX_MESSAGE_LEN];
+};
+
+struct user_info {
+  int fd;
   char username[USERNAME_LEN + 1];
-  char data[MAX_DATA_SIZE + 1];
+  uint16_t public_key_len;
+  uint8_t public_key[PUBLIC_KEY_LEN];
 };
 
 int send_packet(int fd, uint32_t type, void *pack); // struct packet *pack

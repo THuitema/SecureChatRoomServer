@@ -1,6 +1,5 @@
 CC = gcc
-CFLAGS = -g -Wall
-# -fsanitize=address,undefined
+CFLAGS = -g -Wall -fsanitize=address,undefined
 all: client server
 
 client: client.o packet.o
