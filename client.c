@@ -55,7 +55,7 @@ int setup_client(char *host) {
   }
 
   inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), conn_ip, sizeof conn_ip);
-  printf("client: connecting to %s\n", conn_ip);
+  // printf("client: connecting to %s\n", conn_ip);
 
   freeaddrinfo(servinfo);
 
@@ -207,6 +207,7 @@ int main(int argc, char *argv[]) {
         if (read_packet(pfds[SERVER].fd, PACKET_GOODBYE, pack) <= 0) {
           close(sockfd);
           fprintf(stderr, "client: recv");
+          free(pack);
           exit(1);
         }
 
@@ -216,7 +217,9 @@ int main(int argc, char *argv[]) {
           close(sockfd);
           exit(1);
         }
-        printf("user removed successfully\n");
+        printf("<server>: %s left the room\n", pack->username);
+
+        free(pack);
 
       } else {
         fprintf(stderr, "client: invalid packet type, type=%d\n", type);
