@@ -58,7 +58,7 @@ int send_message_packet(int fd, struct message_packet *pack) {
 }
 
 int send_hello_packet(int fd, struct hello_packet *pack) {
-  uint32_t packet_size = 4 + USERNAME_LEN + 4 + PUBLIC_KEY_LEN;
+  uint32_t packet_size = 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
@@ -67,9 +67,9 @@ int send_hello_packet(int fd, struct hello_packet *pack) {
 
   memcpy(buffer + 4, pack->username, USERNAME_LEN);
 
-  uint32_t len = htonl(pack->public_key_len);
-  memcpy(buffer + 4 + USERNAME_LEN, &len, 4);
-  memcpy(buffer + 4 + USERNAME_LEN + 4, pack->public_key, pack->public_key_len);
+  // uint32_t len = htonl(pack->public_key_len);
+  // memcpy(buffer + 4 + USERNAME_LEN, &len, 4);
+  memcpy(buffer + 4 + USERNAME_LEN, pack->public_key, crypto_kx_PUBLICKEYBYTES);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -179,7 +179,7 @@ int read_message_packet(int fd, struct message_packet *pack) {
 int read_hello_packet(int fd, struct hello_packet *pack) {
   int rv;
   char username[USERNAME_LEN + 1];
-  uint32_t len;
+  // uint32_t len;
 
   // read username field
   if ((rv = read_exact(fd, username, USERNAME_LEN)) <= 0) {
@@ -188,24 +188,24 @@ int read_hello_packet(int fd, struct hello_packet *pack) {
   username[USERNAME_LEN] = '\0';
 
   // read public key length field
-  if ((rv = read_exact(fd, &len, 4)) <= 0) {
-    return rv;
-  }
-  len = ntohl(len);
-  if (len > PUBLIC_KEY_LEN) {
-    return -1;
-  }
-  uint8_t *public_key = malloc(len);
+  // if ((rv = read_exact(fd, &len, 4)) <= 0) {
+  //   return rv;
+  // }
+  // len = ntohl(len);
+  // if (len > crypto_kx_PUBLICKEYBYTES) {
+  //   return -1;
+  // }
+  unsigned char *public_key = malloc(crypto_kx_PUBLICKEYBYTES);
 
   // read public key field
-  if ((rv = read_exact(fd, public_key, len)) <= 0) {
+  if ((rv = read_exact(fd, public_key, crypto_kx_PUBLICKEYBYTES)) <= 0) {
     return rv;
   }
 
   pack->type = PACKET_HELLO;
   strncpy(pack->username, username, USERNAME_LEN + 1);
-  pack->public_key_len = len;
-  memcpy(pack->public_key, public_key, len);
+  // pack->public_key_len = len;
+  memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
   
   free(public_key);
   return 1;

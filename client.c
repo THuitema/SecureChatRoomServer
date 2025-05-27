@@ -2,7 +2,6 @@
 ** client.c -- user can send messages, encapsulated as packets when sent to server
 */
 #include "protocol.h"
-#include <sodium.h>
 
 #define SERVER 0
 #define STDIN 1 
@@ -62,7 +61,7 @@ int setup_client(char *host) {
   return sockfd;
 }
 
-void add_user(struct user_info *users[], struct hello_packet *pack, int *user_count, int *user_size) {
+void add_user(struct user_info *users[], struct hello_packet *pack, int *user_count, int *user_size, char *username, unsigned char *pub_key, unsigned char *sec_key) {
   // If we don't have room, realloc twice the current size of the array
   if (*user_count == *user_size) {
     *user_size *= 2;
@@ -71,8 +70,29 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
 
   (*users)[*user_count].fd = -1; // we don't care about this for client side, server handles file desciptors
   strncpy((*users)[*user_count].username, pack->username, USERNAME_LEN+1);
-  (*users)[*user_count].public_key_len = pack->public_key_len;
-  memcpy((*users)[*user_count].public_key, pack->public_key, PUBLIC_KEY_LEN);
+  // (*users)[*user_count].public_key_len = pack->public_key_len;
+  memcpy((*users)[*user_count].public_key, pack->public_key, crypto_kx_PUBLICKEYBYTES);
+
+  unsigned char rx_key[crypto_kx_SESSIONKEYBYTES]; // for decrypting messages from peer
+  unsigned char tx_key[crypto_kx_SESSIONKEYBYTES]; // for encrypting messages to peer
+  int rv = strcmp(username, pack->username);
+
+  if (rv == 0) {
+    fprintf(stderr, "add_user: key exchange failed (username match)\n");
+    exit(1);
+  } else if (rv < 0) {
+    if (crypto_kx_client_session_keys(rx_key, tx_key, pub_key, sec_key, pack->public_key) != 0) {
+      fprintf(stderr, "add_user: key exchange failed\n");
+      exit(1);
+    }
+  } else {
+    if (crypto_kx_server_session_keys(rx_key, tx_key, pub_key, sec_key, pack->public_key) != 0) {
+      fprintf(stderr, "add_user: key exchange failed\n");
+      exit(1);
+    }
+  }
+  memcpy((*users)[*user_count].tx_key, tx_key, crypto_kx_SESSIONKEYBYTES);
+  memcpy((*users)[*user_count].rx_key, rx_key, crypto_kx_SESSIONKEYBYTES);
 
   (*user_count)++;
 }
@@ -94,14 +114,14 @@ int remove_user(struct user_info users[], char *username, int *user_count) {
   return -1;
 }
 
-int send_client_hello(int sockfd, char *username, uint32_t public_key_len, uint8_t public_key[]) {
+int send_client_hello(int sockfd, char *username, unsigned char public_key[]) { // , uint32_t public_key_len,
   // Send client join packet to server, containing username and public key
   struct hello_packet *pack = malloc(sizeof(struct hello_packet));
 
   pack->type = PACKET_HELLO;
   strncpy(pack->username, username, USERNAME_LEN + 1);
-  pack->public_key_len = public_key_len;
-  memcpy(pack->public_key, public_key, PUBLIC_KEY_LEN);
+  // pack->public_key_len = public_key_len;
+  memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
 
   if (send_packet(sockfd, PACKET_HELLO, pack) < 0) {
     free(pack);
@@ -142,12 +162,13 @@ int main(int argc, char *argv[]) {
   if (sodium_init() < 0) {
     exit(1);
   } 
-  
-  // ADD PUBLIC KEY GENERATION (and private key)
-  uint32_t public_key_len = PUBLIC_KEY_LEN;
-  uint8_t public_key[PUBLIC_KEY_LEN] = {0};
 
-  if (send_client_hello(sockfd, username, public_key_len, public_key) < 0) {
+  // ADD PUBLIC KEY GENERATION (and private key)
+  unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
+  unsigned char secret_key[crypto_kx_SECRETKEYBYTES];
+  crypto_kx_keypair(public_key, secret_key);
+
+  if (send_client_hello(sockfd, username, public_key) < 0) {
     fprintf(stderr, "client: send client hello\n");
     exit(1);
   }
@@ -204,7 +225,31 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "client: recv PACKET_HELLO\n");
           exit(1);
         }
-        add_user(&users, hello_pack, &user_count, &user_size);
+        add_user(&users, hello_pack, &user_count, &user_size, username, public_key, secret_key);
+
+        // TEST: remove below
+        char str[] = "rx and tx keys: ";
+        strcpy(buffer, str);
+        memcpy(buffer + strlen(str), users[user_count - 1].rx_key, crypto_kx_SESSIONKEYBYTES);
+        buffer[strlen(str) + crypto_kx_SESSIONKEYBYTES] = '\n';
+        memcpy(buffer + strlen(str) + crypto_kx_SESSIONKEYBYTES + 1, users[user_count - 1].tx_key, crypto_kx_SESSIONKEYBYTES);
+        buffer[2 * crypto_kx_SESSIONKEYBYTES + strlen(str) + 1] = '\0';
+
+        struct message_packet *pack = malloc(sizeof(struct message_packet));
+        pack->type = PACKET_MESSAGE;
+        strncpy(pack->sender, username, USERNAME_LEN + 1);
+        strncpy(pack->receiptient, hello_pack->username, USERNAME_LEN + 1);
+        pack->len = strlen(buffer);
+        strncpy(pack->message, buffer, strlen(buffer));
+
+        if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
+          fprintf(stderr, "client: send");
+          free(pack);
+          exit(1);
+        }
+        free(pack);
+        // remove above
+
         free(hello_pack);    
 
       } else if (type == PACKET_GOODBYE) {

@@ -3,7 +3,6 @@
 */
 
 #include "protocol.h"
-#include <sodium.h>
 
 #define MAX_QUEUE_SIZE 10
 
@@ -97,8 +96,10 @@ void add_fd(struct pollfd *pfds[], struct user_info *users[], int newfd, int *fd
 void add_user_info(struct user_info *users[], struct hello_packet *pack, int newfd, int fd_count, int fd_size) {
   (*users)[fd_count-1].fd = newfd;
   strncpy((*users)[fd_count-1].username, pack->username, USERNAME_LEN+1);
-  (*users)[fd_count-1].public_key_len = pack->public_key_len;
-  memcpy((*users)[fd_count-1].public_key, pack->public_key, PUBLIC_KEY_LEN);
+  // (*users)[fd_count-1].public_key_len = pack->public_key_len;
+  memcpy((*users)[fd_count-1].public_key, pack->public_key, crypto_kx_PUBLICKEYBYTES);
+
+  // do not compute tx and rx keys on server side
 }
 
 void remove_user(struct pollfd pfds[], struct user_info users[], int index, int *fd_count) {
@@ -274,8 +275,8 @@ int main(void) {
                   struct hello_packet *existing_user_hello = malloc(sizeof(struct hello_packet));
                   existing_user_hello->type = PACKET_HELLO;
                   strncpy(existing_user_hello->username, users[j].username, USERNAME_LEN + 1);
-                  existing_user_hello->public_key_len = users[j].public_key_len;
-                  memcpy(existing_user_hello->public_key, users[j].public_key, users[j].public_key_len);
+                  // existing_user_hello->public_key_len = users[j].public_key_len;
+                  memcpy(existing_user_hello->public_key, users[j].public_key, crypto_kx_PUBLICKEYBYTES);
                   
                   if (send_packet(sender_fd, PACKET_HELLO, existing_user_hello) == -1) {
                     fprintf(stderr, "server: send existing user hello\n");

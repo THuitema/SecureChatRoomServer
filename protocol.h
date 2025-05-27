@@ -10,10 +10,11 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <string.h>
+#include <sodium.h>
 
 #define MAX_MESSAGE_LEN 1024
 #define USERNAME_LEN 16
-#define PUBLIC_KEY_LEN 16
+// #define PUBLIC_KEY_LEN 16
 
 #define PORT "3050"
 #define PACKET_HELLO 1
@@ -23,8 +24,8 @@
 struct hello_packet {
   uint32_t type;
   char username[USERNAME_LEN + 1];
-  uint32_t public_key_len;
-  uint8_t public_key[PUBLIC_KEY_LEN];
+  // uint32_t public_key_len;
+  unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
 };
 
 struct message_packet {
@@ -32,7 +33,6 @@ struct message_packet {
   char sender[USERNAME_LEN + 1];
   char receiptient[USERNAME_LEN + 1];
   uint32_t len;
-  // char username[USERNAME_LEN + 1];
   char message[MAX_MESSAGE_LEN];
 };
 
@@ -44,8 +44,10 @@ struct goodbye_packet {
 struct user_info {
   int fd;
   char username[USERNAME_LEN + 1];
-  uint16_t public_key_len;
-  uint8_t public_key[PUBLIC_KEY_LEN];
+  // uint16_t public_key_len;
+  unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
+  unsigned char tx_key[crypto_kx_SESSIONKEYBYTES]; // encrypting to peer
+  unsigned char rx_key[crypto_kx_SESSIONKEYBYTES]; // decrypting from peer
 };
 
 int send_packet(int fd, uint32_t type, void *pack); // struct packet *pack
