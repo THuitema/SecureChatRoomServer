@@ -29,7 +29,7 @@ int setup_server() {
 
   // get info about our computer's network and place in servinfo struct
   if ((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+    fprintf(stderr, "ERROR (getaddrinfo) %s\n", gai_strerror(rv));
     exit(1);
   }
 
@@ -37,7 +37,7 @@ int setup_server() {
   for (p = servinfo; p != NULL; p = p->ai_next) {
       // create socket for the server
       if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-        perror("server: socket");
+        perror("socket");
         continue;
       }
 
@@ -52,7 +52,7 @@ int setup_server() {
       // tells OS that our server socket will listen for incoming connections on port 3490
       if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
         close(sockfd);
-        perror("server: bind");
+        perror("bind");
         continue;
       }
 
@@ -61,7 +61,7 @@ int setup_server() {
 
   // Check for error when binding
   if (p == NULL) {
-    fprintf(stderr, "server: failed to bind\n");
+    fprintf(stderr, "ERROR (bind): failed to bind\n");
     exit(1);
   }
 
@@ -70,7 +70,7 @@ int setup_server() {
   // Begin listening for incoming connections
   if (listen(sockfd, MAX_QUEUE_SIZE) == -1) {
     close(sockfd);
-    perror("server: listen");
+    perror("listen");
     exit(1);
   }
 
@@ -114,7 +114,7 @@ void remove_user(struct pollfd pfds[], struct user_info users[], int index, int 
     int dest_fd = pfds[i].fd;
     if (dest_fd != user_fd) {
       if (send_packet(dest_fd, PACKET_GOODBYE, pack) == -1) {
-        fprintf(stderr, "server: send");
+        fprintf(stderr, "ERROR (send)");
         free(pack);
         exit(1);
       }
@@ -171,7 +171,7 @@ int main(void) {
     int poll_count = poll(pfds, fd_count, -1);
 
     if (poll_count == -1) {
-      perror("server: poll");
+      perror("poll");
       exit(1);
     }
 
@@ -185,11 +185,11 @@ int main(void) {
           addrlen = sizeof conn_addr;
           newfd = accept(serverfd, (struct sockaddr *)&conn_addr, &addrlen);
           if (newfd == -1) {
-            perror("server: accept");
+            perror("accept");
           } else {
             add_fd(&pfds, &users, newfd, &fd_count, &fd_size);
             
-            printf("server: new connection from %s on socket %d\n",
+            printf("NEW CONNECTION <ip:%s> <socket:%d>\n",
               inet_ntop(conn_addr.ss_family, get_in_addr((struct sockaddr*)&conn_addr), conn_ip, INET6_ADDRSTRLEN),
               newfd);
           }
@@ -200,7 +200,7 @@ int main(void) {
 
           if ((type = read_packet_type(sender_fd)) <= 0) {
             if (type == 0) {
-              printf("server: socket %d hung up\n", sender_fd);
+              printf("HANG UP <socket:%d>\n", sender_fd);
             } else {
               perror("server");
             }
@@ -217,7 +217,7 @@ int main(void) {
             // Check for error or connection closed by user
             if (rv <= 0) {
               if (rv == 0) {
-                printf("server: socket %d hung up\n", sender_fd);
+                printf("HANG UP <socket:%d>\n", sender_fd);
               } else {
                 perror("server");
               }
@@ -226,17 +226,17 @@ int main(void) {
               remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
-              printf("MESSAGE <from:%s> <to:%s> (%d bytes)\n", pack->sender, pack->receiptient, pack->len);
+              printf("MESSAGE <from:%s> <to:%s> <bytes:%d>\n", pack->sender, pack->receiptient, pack->len);
 
               // Send message to receiptient without decrypting message
               int dest_fd;
               if ((dest_fd = get_fd(users, pack->receiptient, fd_count)) == -1) {
-                fprintf(stderr, "server: get_fd\n");
+                fprintf(stderr, "ERROR (get_fd)\n");
                 free(pack);
               }
 
               if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
-                fprintf(stderr, "server: send\n");
+                fprintf(stderr, "ERROR (send)\n");
                 free(pack);
                 exit(1);
               }
@@ -250,7 +250,7 @@ int main(void) {
             // Check for error or connection closed by user
             if (rv <= 0) {
               if (rv == 0) {
-                printf("server: socket %d hung up\n", sender_fd);
+                printf("HANG UP <socket:%d>\n", sender_fd);
               } else {
                 perror("server");
               }
@@ -266,7 +266,7 @@ int main(void) {
                 int dest_fd = pfds[j].fd;
                 if (dest_fd != serverfd && dest_fd != sender_fd) {
                   if (send_packet(dest_fd, PACKET_HELLO, hello_pack) == -1) {
-                    fprintf(stderr, "server: send");
+                    fprintf(stderr, "ERROR (send)");
                     free(hello_pack);
                     exit(1);
                   }
@@ -279,7 +279,7 @@ int main(void) {
                   memcpy(existing_user_hello->public_key, users[j].public_key, crypto_kx_PUBLICKEYBYTES);
                   
                   if (send_packet(sender_fd, PACKET_HELLO, existing_user_hello) == -1) {
-                    fprintf(stderr, "server: send existing user hello\n");
+                    fprintf(stderr, "ERROR (send): send existing user hello\n");
                     free(existing_user_hello);
                     free(hello_pack);
                     exit(1);
@@ -290,7 +290,7 @@ int main(void) {
               free(hello_pack);
             }
           } else {
-            fprintf(stderr, "server: invalid packet type\n");
+            fprintf(stderr, "ERROR: invalid packet type\n");
           }
         }
       }

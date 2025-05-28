@@ -27,7 +27,7 @@ int setup_client(char *host) {
 
   // get remote server network
   if ((rv = getaddrinfo(host, PORT, &hints, &servinfo)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+    fprintf(stderr, "ERROR (getaddrinfo): %s\n", gai_strerror(rv));
     exit(1);
   }
 
@@ -35,14 +35,14 @@ int setup_client(char *host) {
   for (p = servinfo; p != NULL; p = p->ai_next) {
     // create client socket
     if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-      perror("client: socket");
+      perror("socket");
       continue;
     }
 
     // connect socket to host
     if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
       close(sockfd);
-      perror("client: connect");
+      perror("connect");
       continue;
     }
 
@@ -50,7 +50,7 @@ int setup_client(char *host) {
   }
 
   if (p == NULL) {
-    fprintf(stderr, "client: failed to connect\n");
+    fprintf(stderr, "ERROR: failed to connect\n");
     exit(1);
   }
 
@@ -78,16 +78,16 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
   int rv = strcmp(username, pack->username);
 
   if (rv == 0) {
-    fprintf(stderr, "add_user: key exchange failed (username match)\n");
+    fprintf(stderr, "ERROR (add_user): key exchange failed (usernames matched)\n");
     exit(1);
   } else if (rv < 0) {
     if (crypto_kx_client_session_keys(rx_key, tx_key, pub_key, sec_key, pack->public_key) != 0) {
-      fprintf(stderr, "add_user: key exchange failed\n");
+      fprintf(stderr, "ERROR (add_user): key exchange failed\n");
       exit(1);
     }
   } else {
     if (crypto_kx_server_session_keys(rx_key, tx_key, pub_key, sec_key, pack->public_key) != 0) {
-      fprintf(stderr, "add_user: key exchange failed\n");
+      fprintf(stderr, "ERROR (add_user): key exchange failed\n");
       exit(1);
     }
   }
@@ -156,13 +156,13 @@ int main(int argc, char *argv[]) {
   struct user_info *users = malloc(sizeof *users * user_size);
 
   if (argc != 3) {
-    fprintf(stderr, "required fields: [hostname] [username]\n");
+    fprintf(stderr, "ERROR (missing required field(s)): ./client [hostname] [username]\n");
     exit(1);
   }
 
   char *username_arg = argv[2];
   if (strlen(username_arg) > USERNAME_LEN) {
-    fprintf(stderr, "error: username must be less than or equal to %d characters", USERNAME_LEN);
+    fprintf(stderr, "ERROR: username must be less than or equal to %d characters", USERNAME_LEN);
     exit(1);
   }
 
@@ -182,7 +182,7 @@ int main(int argc, char *argv[]) {
   crypto_kx_keypair(public_key, secret_key);
 
   if (send_client_hello(sockfd, username, public_key) < 0) {
-    fprintf(stderr, "client: send client hello\n");
+    fprintf(stderr, "ERROR (send): send client hello\n");
     exit(1);
   }
 
@@ -214,27 +214,27 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "Server has disconnected, bye!\n");
           exit(1);
         }
-        fprintf(stderr, "server: read_packet_type\n");
+        fprintf(stderr, "ERROR: read_packet_type\n");
       } else if (type == PACKET_MESSAGE) {
 
         // Read message from server
         struct message_packet *pack = malloc(sizeof(struct message_packet));
         if (read_packet(pfds[SERVER].fd, PACKET_MESSAGE, pack) <= 0) {
           close(sockfd);
-          fprintf(stderr, "client: recv");
+          fprintf(stderr, "ERROR: recv");
           exit(1);
         }
 
         // Decrypt message using shared key
         unsigned char rx_key[crypto_kx_SESSIONKEYBYTES];
         if (get_user_rxkey(rx_key, users, pack->sender, user_count) == -1) {
-          fprintf(stderr, "client: retrieve rx_key\n");
+          fprintf(stderr, "ERROR: retrieve rx_key\n");
           exit(1);
         }
         int message_len = pack->len - crypto_secretbox_MACBYTES;
         unsigned char decrypted[message_len + 1];
         if (crypto_secretbox_open_easy(decrypted, pack->message, pack->len, pack->nonce, rx_key) != 0) {
-          fprintf(stderr, "crypto_secretbox_open_easy: decryption failed\n");
+          fprintf(stderr, "ERROR (crypto_secretbox_open_easy): decryption failed\n");
           exit(1);
         }
         decrypted[message_len] = '\0';
@@ -248,7 +248,7 @@ int main(int argc, char *argv[]) {
         if (read_packet(pfds[SERVER].fd, PACKET_HELLO, hello_pack) <= 0) {
           close(sockfd);
           free(hello_pack);        
-          fprintf(stderr, "client: recv PACKET_HELLO\n");
+          fprintf(stderr, "ERROR (recv): PACKET_HELLO\n");
           exit(1);
         }
         add_user(&users, hello_pack, &user_count, &user_size, username, public_key, secret_key);
@@ -259,14 +259,14 @@ int main(int argc, char *argv[]) {
         struct goodbye_packet *pack = malloc(sizeof(struct goodbye_packet));
         if (read_packet(pfds[SERVER].fd, PACKET_GOODBYE, pack) <= 0) {
           close(sockfd);
-          fprintf(stderr, "client: recv");
+          fprintf(stderr, "ERROR (recv)\n");
           free(pack);
           exit(1);
         }
 
         // remove the user from users (search by username)
         if (remove_user(users, pack->username, &user_count) == -1) {
-          fprintf(stderr, "client: remove_user\n");
+          fprintf(stderr, "ERROR: remove_user\n");
           close(sockfd);
           exit(1);
         }
@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
         free(pack);
 
       } else {
-        fprintf(stderr, "client: invalid packet type, type=%d\n", type);
+        fprintf(stderr, "ERROR: invalid packet type, type=%d\n", type);
       }
       
     }
@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
         randombytes_buf(nonce, sizeof nonce);
 
         if (crypto_secretbox_easy(ciphertext, (const unsigned char *)buffer, strlen(buffer), nonce, users[i].tx_key) != 0) {
-          fprintf(stderr, "crypto_secretbox_easy: error encrypting message\n");
+          fprintf(stderr, "ERROR (crypto_secretbox_easy): error encrypting message\n");
           exit(1);
         }
 
@@ -315,9 +315,8 @@ int main(int argc, char *argv[]) {
         memcpy(pack->nonce, nonce, crypto_secretbox_NONCEBYTES);
         pack->len = sizeof ciphertext;
         memcpy(pack->message, ciphertext, sizeof ciphertext);
-        printf("<client>: sent packet with ciphertext length %lu \n", sizeof ciphertext);
         if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
-          fprintf(stderr, "client: send");
+          fprintf(stderr, "ERROR: send");
           free(pack);
           exit(1);
         }
