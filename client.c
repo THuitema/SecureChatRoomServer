@@ -131,6 +131,20 @@ int send_client_hello(int sockfd, char *username, unsigned char public_key[]) { 
   return 1;
 }
 
+int get_user_rxkey(unsigned char *key, struct user_info users[], char *username, int user_count) {
+  if (!username) {
+    return -1;
+  }
+
+  for (int i = 0; i < user_count; i++) {
+    if (strcmp(users[i].username, username) == 0) {
+      memcpy(key, users[i].rx_key, crypto_kx_SESSIONKEYBYTES);
+      return 1;
+    }
+  }
+  return -1;
+}
+
 int main(int argc, char *argv[]) {
   int sockfd;
   const int fd_count = 2; // one for server, one for stdin (user input)
@@ -163,7 +177,6 @@ int main(int argc, char *argv[]) {
     exit(1);
   } 
 
-  // ADD PUBLIC KEY GENERATION (and private key)
   unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
   unsigned char secret_key[crypto_kx_SECRETKEYBYTES];
   crypto_kx_keypair(public_key, secret_key);
@@ -212,8 +225,21 @@ int main(int argc, char *argv[]) {
           exit(1);
         }
 
-        // DECRYPT MESSAGE
-        printf("<%s>: %s\n", pack->sender, pack->message);
+        // Decrypt message using shared key
+        unsigned char rx_key[crypto_kx_SESSIONKEYBYTES];
+        if (get_user_rxkey(rx_key, users, pack->sender, user_count) == -1) {
+          fprintf(stderr, "client: retrieve rx_key\n");
+          exit(1);
+        }
+        int message_len = pack->len - crypto_secretbox_MACBYTES;
+        unsigned char decrypted[message_len + 1];
+        if (crypto_secretbox_open_easy(decrypted, pack->message, pack->len, pack->nonce, rx_key) != 0) {
+          fprintf(stderr, "crypto_secretbox_open_easy: decryption failed\n");
+          exit(1);
+        }
+        decrypted[message_len] = '\0';
+
+        printf("<%s>: %s\n", pack->sender, decrypted);
 
       } else if (type == PACKET_HELLO) {
 
@@ -226,30 +252,6 @@ int main(int argc, char *argv[]) {
           exit(1);
         }
         add_user(&users, hello_pack, &user_count, &user_size, username, public_key, secret_key);
-
-        // TEST: remove below
-        char str[] = "rx and tx keys: ";
-        strcpy(buffer, str);
-        memcpy(buffer + strlen(str), users[user_count - 1].rx_key, crypto_kx_SESSIONKEYBYTES);
-        buffer[strlen(str) + crypto_kx_SESSIONKEYBYTES] = '\n';
-        memcpy(buffer + strlen(str) + crypto_kx_SESSIONKEYBYTES + 1, users[user_count - 1].tx_key, crypto_kx_SESSIONKEYBYTES);
-        buffer[2 * crypto_kx_SESSIONKEYBYTES + strlen(str) + 1] = '\0';
-
-        struct message_packet *pack = malloc(sizeof(struct message_packet));
-        pack->type = PACKET_MESSAGE;
-        strncpy(pack->sender, username, USERNAME_LEN + 1);
-        strncpy(pack->receiptient, hello_pack->username, USERNAME_LEN + 1);
-        pack->len = strlen(buffer);
-        strncpy(pack->message, buffer, strlen(buffer));
-
-        if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
-          fprintf(stderr, "client: send");
-          free(pack);
-          exit(1);
-        }
-        free(pack);
-        // remove above
-
         free(hello_pack);    
 
       } else if (type == PACKET_GOODBYE) {
@@ -294,14 +296,26 @@ int main(int argc, char *argv[]) {
 
       // Create packet for each user
       for (int i = 0; i < user_count; i++) {
-        // *** ENCRYPT MESSAGE HERE USING RECEIPTIENT's PUBLIC KEY
+        // Encrypt message using the shared key between the two clients
+        unsigned char ciphertext[crypto_secretbox_MACBYTES + strlen(buffer)];
+        unsigned char nonce[crypto_secretbox_NONCEBYTES];
+        randombytes_buf(nonce, sizeof nonce);
+
+        if (crypto_secretbox_easy(ciphertext, (const unsigned char *)buffer, strlen(buffer), nonce, users[i].tx_key) != 0) {
+          fprintf(stderr, "crypto_secretbox_easy: error encrypting message\n");
+          exit(1);
+        }
+
         struct message_packet *pack = malloc(sizeof(struct message_packet));
         pack->type = PACKET_MESSAGE;
         strncpy(pack->sender, username, USERNAME_LEN + 1);
         strncpy(pack->receiptient, users[i].username, USERNAME_LEN + 1);
-        pack->len = strlen(buffer);
-        strncpy(pack->message, buffer, strlen(buffer));
-
+        // pack->len = strlen(buffer);
+        // strncpy(pack->message, buffer, strlen(buffer));
+        memcpy(pack->nonce, nonce, crypto_secretbox_NONCEBYTES);
+        pack->len = sizeof ciphertext;
+        memcpy(pack->message, ciphertext, sizeof ciphertext);
+        printf("<client>: sent packet with ciphertext length %lu \n", sizeof ciphertext);
         if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
           fprintf(stderr, "client: send");
           free(pack);

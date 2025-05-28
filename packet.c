@@ -24,7 +24,7 @@ int send_message_packet(int fd, struct message_packet *pack) {
     return -1;
   }
 
-  uint32_t packet_size = 4 + (2*USERNAME_LEN) + 4 + pack->len; //8 + USERNAME_LEN + pack->len;
+  uint32_t packet_size = 4 + (2*USERNAME_LEN) + crypto_secretbox_NONCEBYTES + 4 + pack->len; // 8 + USERNAME_LEN + pack->len;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
@@ -34,9 +34,12 @@ int send_message_packet(int fd, struct message_packet *pack) {
   memcpy(buffer + 4, pack->sender, USERNAME_LEN);
   memcpy(buffer + 4 + USERNAME_LEN, pack->receiptient, USERNAME_LEN);
 
+
+  memcpy(buffer + 4 + (2*USERNAME_LEN), pack->nonce, crypto_secretbox_NONCEBYTES);
+
   uint32_t message_len = htonl(pack->len); 
-  memcpy(buffer + 4 + (2 * USERNAME_LEN), &message_len, 4);
-  memcpy(buffer + 4 + (2 * USERNAME_LEN) + 4, pack->message, pack->len);
+  memcpy(buffer + 4 + (2 * USERNAME_LEN) + crypto_secretbox_NONCEBYTES, &message_len, 4);
+  memcpy(buffer + 4 + (2 * USERNAME_LEN) + crypto_secretbox_NONCEBYTES + 4, pack->message, pack->len);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -136,6 +139,7 @@ int read_message_packet(int fd, struct message_packet *pack) {
   uint32_t len; 
   char sender[USERNAME_LEN + 1];
   char receiptient[USERNAME_LEN + 1];
+  unsigned char nonce[crypto_secretbox_NONCEBYTES];
 
   // read sender and receiptient fields
   if ((rv = read_exact(fd, sender, USERNAME_LEN)) <= 0) {
@@ -148,31 +152,37 @@ int read_message_packet(int fd, struct message_packet *pack) {
   }
   receiptient[USERNAME_LEN] = '\0';
 
+  if ((rv = read_exact(fd, nonce, crypto_secretbox_NONCEBYTES)) <= 0) {
+    return rv;
+  }
+
   // read length field
   if ((rv = read_exact(fd, &len, 4)) <= 0) {
     return rv;
   }
   len = ntohl(len);
 
-  if (len > MAX_MESSAGE_LEN) {
-    return -1;
-  }
-  char *message = malloc(len + 1);
+  // if (len > MAX_MESSAGE_LEN) {
+  //   return -1;
+  // }
+  // char *message = malloc(len + 1);
+  unsigned char message[len];
 
   // read data field
   if ((rv = read_exact(fd, message, len)) <= 0) {
     return rv;
   }
-  message[len] = '\0';
+  // message[len] = '\0';
 
   pack->type = PACKET_MESSAGE;
   strncpy(pack->sender, sender, USERNAME_LEN + 1);
   strncpy(pack->receiptient, receiptient, USERNAME_LEN + 1);
-
+  memcpy(pack->nonce, nonce, sizeof nonce);
   pack->len = len;
-  strncpy(pack->message, message, len + 1);
+  // strncpy(pack->message, message, len + 1);
+  memcpy(pack->message, message, len);
 
-  free(message);
+  // free(message);
   return 1;
 }
 

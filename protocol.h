@@ -32,8 +32,9 @@ struct message_packet {
   uint32_t type;
   char sender[USERNAME_LEN + 1];
   char receiptient[USERNAME_LEN + 1];
+  unsigned char nonce[crypto_secretbox_NONCEBYTES];
   uint32_t len;
-  char message[MAX_MESSAGE_LEN];
+  unsigned char message[MAX_MESSAGE_LEN + crypto_secretbox_MACBYTES]; // encypted
 };
 
 struct goodbye_packet {

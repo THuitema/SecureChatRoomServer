@@ -226,7 +226,7 @@ int main(void) {
               remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
-              printf("<from:%s> <to:%s> \"%s\"\n", pack->sender, pack->receiptient, pack->message);
+              printf("MESSAGE <from:%s> <to:%s> (%d bytes)\n", pack->sender, pack->receiptient, pack->len);
 
               // Send message to receiptient without decrypting message
               int dest_fd;
