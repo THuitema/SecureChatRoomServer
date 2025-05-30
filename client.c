@@ -113,10 +113,27 @@ int remove_user(struct user_info users[], char *username, int *user_count) {
   return -1;
 }
 
+void compute_fingerprint(unsigned char *id_public_key) {
+  unsigned char hash[crypto_hash_sha256_BYTES];
+  crypto_hash_sha256(hash, id_public_key, crypto_sign_PUBLICKEYBYTES);
+  printf("Your safety number is:\n");
+
+  // Print in hexadecimal
+  for (int i = 0; i < crypto_hash_sha256_BYTES; i++) {
+    printf("%02x ", hash[i]);
+    if ((i+1) % 8 == 0) {
+      printf("\n");
+    }
+  }
+  printf("\n");
+}
+
 int send_client_hello(int sockfd, char *username, unsigned char public_key[]) { // , uint32_t public_key_len,
   unsigned char id_public_key[crypto_sign_PUBLICKEYBYTES];
   unsigned char id_secret_key[crypto_sign_SECRETKEYBYTES];
   crypto_sign_keypair(id_public_key, id_secret_key);
+
+  compute_fingerprint(id_public_key);
   
   // Send client join packet to server, containing username and public key
   struct hello_packet *pack = malloc(sizeof(struct hello_packet));
@@ -335,7 +352,7 @@ int main(int argc, char *argv[]) {
           free(pack);
           exit(1);
         }
-        
+
         free(pack);
       }
     }
