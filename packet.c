@@ -61,18 +61,16 @@ int send_message_packet(int fd, struct message_packet *pack) {
 }
 
 int send_hello_packet(int fd, struct hello_packet *pack) {
-  uint32_t packet_size = 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES;
+  uint32_t packet_size = 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES + crypto_sign_BYTES;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
   uint32_t packet_type = htonl(pack->type);
   memcpy(buffer, &packet_type, 4);
-
   memcpy(buffer + 4, pack->username, USERNAME_LEN);
-
-  // uint32_t len = htonl(pack->public_key_len);
-  // memcpy(buffer + 4 + USERNAME_LEN, &len, 4);
   memcpy(buffer + 4 + USERNAME_LEN, pack->public_key, crypto_kx_PUBLICKEYBYTES);
+  memcpy(buffer + 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES, pack->id_public_key, crypto_sign_PUBLICKEYBYTES);
+  memcpy(buffer + 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES, pack->signature, crypto_sign_BYTES);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -162,27 +160,20 @@ int read_message_packet(int fd, struct message_packet *pack) {
   }
   len = ntohl(len);
 
-  // if (len > MAX_MESSAGE_LEN) {
-  //   return -1;
-  // }
-  // char *message = malloc(len + 1);
   unsigned char message[len];
 
   // read data field
   if ((rv = read_exact(fd, message, len)) <= 0) {
     return rv;
   }
-  // message[len] = '\0';
 
   pack->type = PACKET_MESSAGE;
   strncpy(pack->sender, sender, USERNAME_LEN + 1);
   strncpy(pack->receiptient, receiptient, USERNAME_LEN + 1);
   memcpy(pack->nonce, nonce, sizeof nonce);
   pack->len = len;
-  // strncpy(pack->message, message, len + 1);
   memcpy(pack->message, message, len);
 
-  // free(message);
   return 1;
 }
 
@@ -197,27 +188,35 @@ int read_hello_packet(int fd, struct hello_packet *pack) {
   }
   username[USERNAME_LEN] = '\0';
 
-  // read public key length field
-  // if ((rv = read_exact(fd, &len, 4)) <= 0) {
-  //   return rv;
-  // }
-  // len = ntohl(len);
-  // if (len > crypto_kx_PUBLICKEYBYTES) {
-  //   return -1;
-  // }
   unsigned char *public_key = malloc(crypto_kx_PUBLICKEYBYTES);
+  unsigned char *id_public_key = malloc(crypto_sign_PUBLICKEYBYTES);
+  unsigned char *signature = malloc(crypto_sign_BYTES);
 
   // read public key field
   if ((rv = read_exact(fd, public_key, crypto_kx_PUBLICKEYBYTES)) <= 0) {
     return rv;
   }
 
+  // read ID public key field
+  if ((rv = read_exact(fd, id_public_key, crypto_sign_PUBLICKEYBYTES)) <= 0) {
+    return rv;
+  }
+
+  // read signature field
+  if ((rv = read_exact(fd, signature, crypto_sign_BYTES)) <= 0) {
+    return rv;
+  }
+
   pack->type = PACKET_HELLO;
   strncpy(pack->username, username, USERNAME_LEN + 1);
-  // pack->public_key_len = len;
   memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
+  memcpy(pack->id_public_key, id_public_key, crypto_sign_PUBLICKEYBYTES);
+  memcpy(pack->signature, signature, crypto_sign_BYTES); // HEAP OVERFLOW
   
   free(public_key);
+  free(id_public_key);
+  free(signature);
+
   return 1;
 }
 

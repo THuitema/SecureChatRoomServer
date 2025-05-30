@@ -24,8 +24,9 @@
 struct hello_packet {
   uint32_t type;
   char username[USERNAME_LEN + 1];
-  // uint32_t public_key_len;
   unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
+  unsigned char id_public_key[crypto_sign_PUBLICKEYBYTES];
+  unsigned char signature[crypto_sign_BYTES];
 };
 
 struct message_packet {
@@ -45,10 +46,11 @@ struct goodbye_packet {
 struct user_info {
   int fd;
   char username[USERNAME_LEN + 1];
-  // uint16_t public_key_len;
   unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
   unsigned char tx_key[crypto_kx_SESSIONKEYBYTES]; // encrypting to peer
   unsigned char rx_key[crypto_kx_SESSIONKEYBYTES]; // decrypting from peer
+  unsigned char id_public_key[crypto_sign_PUBLICKEYBYTES];
+  unsigned char signature[crypto_sign_BYTES];
 };
 
 int send_packet(int fd, uint32_t type, void *pack); // struct packet *pack

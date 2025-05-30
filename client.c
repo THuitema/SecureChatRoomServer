@@ -70,7 +70,6 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
 
   (*users)[*user_count].fd = -1; // we don't care about this for client side, server handles file desciptors
   strncpy((*users)[*user_count].username, pack->username, USERNAME_LEN+1);
-  // (*users)[*user_count].public_key_len = pack->public_key_len;
   memcpy((*users)[*user_count].public_key, pack->public_key, crypto_kx_PUBLICKEYBYTES);
 
   unsigned char rx_key[crypto_kx_SESSIONKEYBYTES]; // for decrypting messages from peer
@@ -115,13 +114,23 @@ int remove_user(struct user_info users[], char *username, int *user_count) {
 }
 
 int send_client_hello(int sockfd, char *username, unsigned char public_key[]) { // , uint32_t public_key_len,
+  unsigned char id_public_key[crypto_sign_PUBLICKEYBYTES];
+  unsigned char id_secret_key[crypto_sign_SECRETKEYBYTES];
+  crypto_sign_keypair(id_public_key, id_secret_key);
+  
   // Send client join packet to server, containing username and public key
   struct hello_packet *pack = malloc(sizeof(struct hello_packet));
 
   pack->type = PACKET_HELLO;
   strncpy(pack->username, username, USERNAME_LEN + 1);
-  // pack->public_key_len = public_key_len;
   memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
+  memcpy(pack->id_public_key, id_public_key, crypto_sign_PUBLICKEYBYTES);
+  // pack->signature = malloc(crypto_sign_BYTES);
+
+  if (crypto_sign_detached(pack->signature, NULL, public_key, crypto_kx_PUBLICKEYBYTES, id_secret_key) == -1) {
+    fprintf(stderr, "ERROR: crypto_sign_detached\n");
+    exit(1);
+  }
 
   if (send_packet(sockfd, PACKET_HELLO, pack) < 0) {
     free(pack);
@@ -251,6 +260,13 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "ERROR (recv): PACKET_HELLO\n");
           exit(1);
         }
+
+        // Verify signature of packet
+        if (crypto_sign_verify_detached(hello_pack->signature, hello_pack->public_key, crypto_kx_PUBLICKEYBYTES, hello_pack->id_public_key) == -1) {
+          fprintf(stderr, "ERROR: signature verification failed. Aborting connection.\n");
+          exit(1);
+        }
+
         add_user(&users, hello_pack, &user_count, &user_size, username, public_key, secret_key);
         free(hello_pack);    
 
@@ -310,16 +326,16 @@ int main(int argc, char *argv[]) {
         pack->type = PACKET_MESSAGE;
         strncpy(pack->sender, username, USERNAME_LEN + 1);
         strncpy(pack->receiptient, users[i].username, USERNAME_LEN + 1);
-        // pack->len = strlen(buffer);
-        // strncpy(pack->message, buffer, strlen(buffer));
         memcpy(pack->nonce, nonce, crypto_secretbox_NONCEBYTES);
         pack->len = sizeof ciphertext;
         memcpy(pack->message, ciphertext, sizeof ciphertext);
+
         if (send_packet(sockfd, PACKET_MESSAGE, pack) == -1) {
           fprintf(stderr, "ERROR: send");
           free(pack);
           exit(1);
         }
+        
         free(pack);
       }
     }

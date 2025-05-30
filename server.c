@@ -96,10 +96,9 @@ void add_fd(struct pollfd *pfds[], struct user_info *users[], int newfd, int *fd
 void add_user_info(struct user_info *users[], struct hello_packet *pack, int newfd, int fd_count, int fd_size) {
   (*users)[fd_count-1].fd = newfd;
   strncpy((*users)[fd_count-1].username, pack->username, USERNAME_LEN+1);
-  // (*users)[fd_count-1].public_key_len = pack->public_key_len;
   memcpy((*users)[fd_count-1].public_key, pack->public_key, crypto_kx_PUBLICKEYBYTES);
-
-  // do not compute tx and rx keys on server side
+  memcpy((*users)[fd_count-1].id_public_key, pack->id_public_key, crypto_sign_PUBLICKEYBYTES);
+  memcpy((*users)[fd_count-1].signature, pack->signature, crypto_sign_BYTES);
 }
 
 void remove_user(struct pollfd pfds[], struct user_info users[], int index, int *fd_count) {
@@ -275,8 +274,9 @@ int main(void) {
                   struct hello_packet *existing_user_hello = malloc(sizeof(struct hello_packet));
                   existing_user_hello->type = PACKET_HELLO;
                   strncpy(existing_user_hello->username, users[j].username, USERNAME_LEN + 1);
-                  // existing_user_hello->public_key_len = users[j].public_key_len;
                   memcpy(existing_user_hello->public_key, users[j].public_key, crypto_kx_PUBLICKEYBYTES);
+                  memcpy(existing_user_hello->id_public_key, users[j].id_public_key, crypto_sign_PUBLICKEYBYTES);
+                  memcpy(existing_user_hello->signature, users[j].signature, crypto_sign_BYTES);
                   
                   if (send_packet(sender_fd, PACKET_HELLO, existing_user_hello) == -1) {
                     fprintf(stderr, "ERROR (send): send existing user hello\n");
