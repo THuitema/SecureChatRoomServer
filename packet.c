@@ -9,6 +9,7 @@ int read_message_packet(int fd, struct message_packet *pack);
 int read_hello_packet(int fd, struct hello_packet *pack);
 int read_goodbye_packet(int fd, struct goodbye_packet *pack);
 int read_serv_info_packet(int fd, struct serv_info_packet *pack);
+int send_all(int fd, char *buffer, uint32_t packet_size);
 
 int send_packet(int fd, uint32_t type, void *pack) {
   if (type == PACKET_MESSAGE) {
@@ -45,23 +46,7 @@ int send_message_packet(int fd, struct message_packet *pack) {
   memcpy(buffer + 4 + (2 * USERNAME_LEN) + crypto_secretbox_NONCEBYTES, &message_len, 4);
   memcpy(buffer + 4 + (2 * USERNAME_LEN) + crypto_secretbox_NONCEBYTES + 4, pack->message, pack->len);
 
-  // repeat send() calls until all of packet is sent
-  uint32_t bytes_sent = 0;
-  uint32_t bytes_left = packet_size;
-  uint32_t n;
-
-  while (bytes_sent < packet_size) {
-    n = send(fd, buffer + bytes_sent, bytes_left, 0);
-    if (n == -1) {
-      return -1;
-    }
-    bytes_sent += n;
-    bytes_left -= n;
-  }
-
-  free(buffer);
-
-  return 1;
+  return send_all(fd, buffer, packet_size);
 }
 
 int send_hello_packet(int fd, struct hello_packet *pack) {
@@ -79,23 +64,7 @@ int send_hello_packet(int fd, struct hello_packet *pack) {
   memcpy(buffer + 8 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES, pack->id_public_key, crypto_sign_PUBLICKEYBYTES);
   memcpy(buffer + 8 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES, pack->signature, crypto_sign_BYTES);
 
-  // repeat send() calls until all of packet is sent
-  uint32_t bytes_sent = 0;
-  uint32_t bytes_left = packet_size;
-  uint32_t n;
-
-  while (bytes_sent < packet_size) {
-    n = send(fd, buffer + bytes_sent, bytes_left, 0);
-    if (n == -1) {
-      return -1;
-    }
-    bytes_sent += n;
-    bytes_left -= n;
-  }
-
-  free(buffer);
-
-  return 1;
+  return send_all(fd, buffer, packet_size);
 }
 
 int send_goodbye_packet(int fd, struct goodbye_packet *pack) {
@@ -108,23 +77,7 @@ int send_goodbye_packet(int fd, struct goodbye_packet *pack) {
 
   memcpy(buffer + 4, pack->username, USERNAME_LEN);
 
-  // repeat send() calls until all of packet is sent
-  uint32_t bytes_sent = 0;
-  uint32_t bytes_left = packet_size;
-  uint32_t n;
-
-  while (bytes_sent < packet_size) {
-    n = send(fd, buffer + bytes_sent, bytes_left, 0);
-    if (n == -1) {
-      return -1;
-    }
-    bytes_sent += n;
-    bytes_left -= n;
-  }
-
-  free(buffer);
-
-  return 1;
+  return send_all(fd, buffer, packet_size);
 }
 
 int send_serv_info_packet(int fd, struct serv_info_packet *pack) {
@@ -138,6 +91,10 @@ int send_serv_info_packet(int fd, struct serv_info_packet *pack) {
   uint32_t num_users = htonl(pack->num_users);
   memcpy(buffer + 4, &num_users, 4);
 
+  return send_all(fd, buffer, packet_size);
+}
+
+int send_all(int fd, char *buffer, uint32_t packet_size) {
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
   uint32_t bytes_left = packet_size;
@@ -152,7 +109,6 @@ int send_serv_info_packet(int fd, struct serv_info_packet *pack) {
     bytes_left -= n;
   }
 
-  free(buffer);
   return 1;
 }
 
