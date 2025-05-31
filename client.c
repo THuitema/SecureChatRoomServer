@@ -291,9 +291,10 @@ int main(int argc, char *argv[]) {
         if (hello_pack->user_status == EXISTING_USER) {
           printf("- %s: ", hello_pack->username);
           compute_fingerprint(hello_pack->id_public_key);
+          printf("\n");
           existing_users--;
           if (existing_users == 0) {
-            printf("\n\nUse a trusted method (e.g. phone call or another app) to verify these numbers.\n\n");
+            printf("\nUse a trusted method (e.g. phone call or another app) to verify these numbers.\n\n");
             printf("Type \\leave to exit if any numbers don't match or anything else looks suspicious\n\n");
             printf("--- END OF NOTICE ---\n\n");
           }
