@@ -16,8 +16,6 @@
 #define USERNAME_LEN 16
 #define NEW_USER 1
 #define EXISTING_USER 2
-// #define PUBLIC_KEY_LEN 16
-
 #define PORT "3050"
 #define PACKET_HELLO 1
 #define PACKET_MESSAGE 2
@@ -62,7 +60,7 @@ struct user_info {
   unsigned char signature[crypto_sign_BYTES];
 };
 
-int send_packet(int fd, uint32_t type, void *pack); // struct packet *pack
+int send_packet(int fd, uint32_t type, void *pack);
 int read_packet(int fd, uint32_t expected_type, void *pack);
 int read_packet_type(int fd);
 

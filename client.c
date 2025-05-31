@@ -1,6 +1,3 @@
-/*
-** client.c -- user can send messages, encapsulated as packets when sent to server
-*/
 #include "protocol.h"
 
 #define SERVER 0
@@ -114,18 +111,13 @@ int remove_user(struct user_info users[], char *username, int *user_count) {
 }
 
 void compute_fingerprint(unsigned char *id_public_key) {
-  unsigned char hash[crypto_generichash_BYTES_MIN];  // crypto_hash_sha256_BYTES
+  unsigned char hash[crypto_generichash_BYTES_MIN]; 
   crypto_generichash(hash, crypto_generichash_BYTES_MIN, id_public_key, crypto_sign_PUBLICKEYBYTES, NULL, 0);
-  // crypto_hash_sha256(hash, id_public_key, crypto_sign_PUBLICKEYBYTES);
 
   // Print in hexadecimal
   for (int i = 0; i < crypto_generichash_BYTES_MIN; i++) {
     printf("%02x", hash[i]);
-    // if ((i+1) % 8 == 0) {
-    //   printf("\n");
-    // }
   }
-  // printf("\n");
 }
 
 int send_client_hello(int sockfd, char *username, unsigned char public_key[], unsigned char id_public_key[], unsigned char id_secret_key[]) {
@@ -209,18 +201,10 @@ int main(int argc, char *argv[]) {
   printf("Welcome to the secure chat room.\n");
   printf("This server implements end-to-end encryption and manual public key verification.\n\n");
 
-  // printf("To leave the room at any time, type \\leave\n\n");
-
   printf("Your safety number: ");
   compute_fingerprint(id_public_key);
   printf("\n\n");
 
-  // printf("IMPORTANT:\n");
-  // printf("- Verify this number with others if they ask. Do NOT share it in the chat (use Discord, phone call, etc.)\n");
-  // printf("- Verify each existing user's safety number (below) matches with what you see.\n");
-  // printf("- If ANY number does not match, someone may be impersonating or intercepting messages.\n");
-
-  // printf("\nExisting Users (if any exist):\n");
   if (send_client_hello(sockfd, username, public_key, id_public_key, id_secret_key) < 0) {
     fprintf(stderr, "[ERROR] send client hello\n");
     exit(1);
@@ -234,8 +218,6 @@ int main(int argc, char *argv[]) {
   pfds[STDIN].fd = fileno(stdin);
   pfds[STDIN].events = POLLIN;
   pfds[STDIN].revents = 0;
-
-
 
   // Main loop
   while (1) {

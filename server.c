@@ -1,7 +1,3 @@
-/*
-** server.c -- decodes packets from user into messages, and prints them
-*/
-
 #include "protocol.h"
 
 #define MAX_QUEUE_SIZE 10
