@@ -242,6 +242,7 @@ int main(void) {
               free(pack);
             }
           } else if (type == PACKET_HELLO) {
+
             // New user packet (username & public key)
             struct hello_packet *hello_pack = malloc(sizeof(struct hello_packet));
             int rv = read_packet(sender_fd, PACKET_HELLO, hello_pack);
@@ -260,6 +261,16 @@ int main(void) {
             } else {
               add_user_info(&users, hello_pack, newfd, fd_count, fd_size);     
 
+              // Send server info packet to new user
+              struct serv_info_packet *info_pack = malloc(sizeof(struct serv_info_packet));
+              info_pack->type = PACKET_SERV_INFO;
+              info_pack->num_users = fd_count - 2; // minus 2 for server and the user itself
+              if (send_packet(sender_fd, PACKET_SERV_INFO, info_pack) == -1) {
+                fprintf(stderr, "[ERROR] send server info\n");
+                free(info_pack);
+                exit(1);
+              }
+
               // Broadcast hello packet to all other users, and send hello packet to new user for each existing user
               for (int j = 0; j < fd_count; j++) {
                 int dest_fd = pfds[j].fd;
@@ -273,6 +284,7 @@ int main(void) {
                   // Send hello packet to new user for each existing user
                   struct hello_packet *existing_user_hello = malloc(sizeof(struct hello_packet));
                   existing_user_hello->type = PACKET_HELLO;
+                  existing_user_hello->user_status = EXISTING_USER;
                   strncpy(existing_user_hello->username, users[j].username, USERNAME_LEN + 1);
                   memcpy(existing_user_hello->public_key, users[j].public_key, crypto_kx_PUBLICKEYBYTES);
                   memcpy(existing_user_hello->id_public_key, users[j].id_public_key, crypto_sign_PUBLICKEYBYTES);

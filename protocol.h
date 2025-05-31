@@ -14,15 +14,19 @@
 
 #define MAX_MESSAGE_LEN 1024
 #define USERNAME_LEN 16
+#define NEW_USER 1
+#define EXISTING_USER 2
 // #define PUBLIC_KEY_LEN 16
 
 #define PORT "3050"
 #define PACKET_HELLO 1
 #define PACKET_MESSAGE 2
 #define PACKET_GOODBYE 3
+#define PACKET_SERV_INFO 4
 
 struct hello_packet {
   uint32_t type;
+  uint32_t user_status;
   char username[USERNAME_LEN + 1];
   unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
   unsigned char id_public_key[crypto_sign_PUBLICKEYBYTES];
@@ -41,6 +45,11 @@ struct message_packet {
 struct goodbye_packet {
   uint32_t type;
   char username[USERNAME_LEN + 1];
+};
+
+struct serv_info_packet {
+  uint32_t type;
+  uint32_t num_users;
 };
 
 struct user_info {

@@ -4,9 +4,11 @@ int read_exact(int fd, void *buffer, int len);
 int send_message_packet(int fd, struct message_packet *pack);
 int send_hello_packet(int fd, struct hello_packet *pack);
 int send_goodbye_packet(int fd, struct goodbye_packet *pack);
+int send_serv_info_packet(int fd, struct serv_info_packet *pack);
 int read_message_packet(int fd, struct message_packet *pack);
 int read_hello_packet(int fd, struct hello_packet *pack);
 int read_goodbye_packet(int fd, struct goodbye_packet *pack);
+int read_serv_info_packet(int fd, struct serv_info_packet *pack);
 
 int send_packet(int fd, uint32_t type, void *pack) {
   if (type == PACKET_MESSAGE) {
@@ -15,6 +17,8 @@ int send_packet(int fd, uint32_t type, void *pack) {
     return send_hello_packet(fd, (struct hello_packet *)pack);
   } else if (type == PACKET_GOODBYE) {
     return send_goodbye_packet(fd, (struct goodbye_packet *)pack);
+  } else if (type == PACKET_SERV_INFO) {
+    return send_serv_info_packet(fd, (struct serv_info_packet *)pack);
   }
   return -1;
 }
@@ -61,16 +65,19 @@ int send_message_packet(int fd, struct message_packet *pack) {
 }
 
 int send_hello_packet(int fd, struct hello_packet *pack) {
-  uint32_t packet_size = 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES + crypto_sign_BYTES;
+  uint32_t packet_size = 8 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES + crypto_sign_BYTES;
   char *buffer = malloc(packet_size);
 
   // write header, converting info to network byte order
   uint32_t packet_type = htonl(pack->type);
+  uint32_t user_status = htonl(pack->user_status);
+
   memcpy(buffer, &packet_type, 4);
-  memcpy(buffer + 4, pack->username, USERNAME_LEN);
-  memcpy(buffer + 4 + USERNAME_LEN, pack->public_key, crypto_kx_PUBLICKEYBYTES);
-  memcpy(buffer + 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES, pack->id_public_key, crypto_sign_PUBLICKEYBYTES);
-  memcpy(buffer + 4 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES, pack->signature, crypto_sign_BYTES);
+  memcpy(buffer + 4, &user_status, 4);
+  memcpy(buffer + 8, pack->username, USERNAME_LEN);
+  memcpy(buffer + 8 + USERNAME_LEN, pack->public_key, crypto_kx_PUBLICKEYBYTES);
+  memcpy(buffer + 8 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES, pack->id_public_key, crypto_sign_PUBLICKEYBYTES);
+  memcpy(buffer + 8 + USERNAME_LEN + crypto_kx_PUBLICKEYBYTES + crypto_sign_PUBLICKEYBYTES, pack->signature, crypto_sign_BYTES);
 
   // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
@@ -120,6 +127,34 @@ int send_goodbye_packet(int fd, struct goodbye_packet *pack) {
   return 1;
 }
 
+int send_serv_info_packet(int fd, struct serv_info_packet *pack) {
+  uint32_t packet_size = 8;
+  char *buffer = malloc(packet_size);
+
+  // write header, converting info to network byte order
+  uint32_t packet_type = htonl(pack->type);
+  memcpy(buffer, &packet_type, 4);
+
+  uint32_t num_users = htonl(pack->num_users);
+  memcpy(buffer + 4, &num_users, 4);
+
+  // repeat send() calls until all of packet is sent
+  uint32_t bytes_sent = 0;
+  uint32_t bytes_left = packet_size;
+  uint32_t n;
+
+  while (bytes_sent < packet_size) {
+    n = send(fd, buffer + bytes_sent, bytes_left, 0);
+    if (n == -1) {
+      return -1;
+    }
+    bytes_sent += n;
+    bytes_left -= n;
+  }
+
+  free(buffer);
+  return 1;
+}
 
 int read_packet(int fd, uint32_t expected_type, void *pack) {
   if (expected_type == PACKET_MESSAGE) {
@@ -128,6 +163,8 @@ int read_packet(int fd, uint32_t expected_type, void *pack) {
     return read_hello_packet(fd, (struct hello_packet *)pack);
   } else if (expected_type == PACKET_GOODBYE) {
     return read_goodbye_packet(fd, (struct goodbye_packet *)pack);
+  } else if (expected_type == PACKET_SERV_INFO) {
+    return read_serv_info_packet(fd, (struct serv_info_packet *)pack);
   }
   return -1;
 }
@@ -180,7 +217,13 @@ int read_message_packet(int fd, struct message_packet *pack) {
 int read_hello_packet(int fd, struct hello_packet *pack) {
   int rv;
   char username[USERNAME_LEN + 1];
-  // uint32_t len;
+
+  // Read user type field
+  uint32_t user_status;
+  if ((rv = read_exact(fd, &user_status, 4)) <= 0) {
+    return rv;
+  }
+  user_status = ntohl(user_status);
 
   // read username field
   if ((rv = read_exact(fd, username, USERNAME_LEN)) <= 0) {
@@ -208,6 +251,7 @@ int read_hello_packet(int fd, struct hello_packet *pack) {
   }
 
   pack->type = PACKET_HELLO;
+  pack->user_status = user_status;
   strncpy(pack->username, username, USERNAME_LEN + 1);
   memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
   memcpy(pack->id_public_key, id_public_key, crypto_sign_PUBLICKEYBYTES);
@@ -232,6 +276,21 @@ int read_goodbye_packet(int fd, struct goodbye_packet *pack) {
 
   pack->type = PACKET_GOODBYE;
   strncpy(pack->username, username, USERNAME_LEN + 1);
+  return 1;
+}
+
+int read_serv_info_packet(int fd, struct serv_info_packet *pack) {
+  int rv;
+
+  uint32_t num_users;
+  if ((rv = read_exact(fd, &num_users, 4)) <= 0) {
+    printf("read exact error\n");
+    return rv;
+  }
+  num_users = ntohl(num_users);
+
+  pack->type = PACKET_SERV_INFO;
+  pack->num_users = num_users;
   return 1;
 }
 

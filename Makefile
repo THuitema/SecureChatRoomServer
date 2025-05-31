@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -g -Wall -fsanitize=address,undefined -I/opt/homebrew/include
+CFLAGS = -g -Wall -I/opt/homebrew/include #-fsanitize=address,undefined
+
 LDFLAGS = -L/opt/homebrew/lib -lsodium
 
 all: client server
