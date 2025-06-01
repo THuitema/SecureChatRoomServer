@@ -12,6 +12,7 @@ void *get_in_addr(struct sockaddr *sa) {
   return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
+// Perform network setup for client, including getting server info, creating socket, and connecting socket to network
 int setup_client(char *host) {
   struct addrinfo hints, *servinfo, *p;
   int rv, sockfd;
@@ -58,6 +59,8 @@ int setup_client(char *host) {
   return sockfd;
 }
 
+
+// Add new user, specified by hello_packet, to users array. Parameters username, pub_key, and sec_key are the values for the current client
 void add_user(struct user_info *users[], struct hello_packet *pack, int *user_count, int *user_size, char *username, unsigned char *pub_key, unsigned char *sec_key) {
   // If we don't have room, realloc twice the current size of the array
   if (*user_count == *user_size) {
@@ -69,6 +72,9 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
   strncpy((*users)[*user_count].username, pack->username, USERNAME_LEN+1);
   memcpy((*users)[*user_count].public_key, pack->public_key, crypto_kx_PUBLICKEYBYTES);
 
+  // Generate symmetric key pair (Diffie Hellman) for encrypting/decrypting messages
+  // We have to assign one user in the key exchange as the "client" and the other the "server"
+  // We do this by comparing their usernames
   unsigned char rx_key[crypto_kx_SESSIONKEYBYTES]; // for decrypting messages from peer
   unsigned char tx_key[crypto_kx_SESSIONKEYBYTES]; // for encrypting messages to peer
   int rv = strcmp(username, pack->username);
@@ -93,6 +99,7 @@ void add_user(struct user_info *users[], struct hello_packet *pack, int *user_co
   (*user_count)++;
 }
 
+// Remove user from users by their username
 int remove_user(struct user_info users[], char *username, int *user_count) {
   if (!username) {
     return -1;
@@ -110,6 +117,7 @@ int remove_user(struct user_info users[], char *username, int *user_count) {
   return -1;
 }
 
+// Compute hash of user's identity public key and print its hexadecimal representation
 void compute_fingerprint(unsigned char *id_public_key) {
   unsigned char hash[crypto_generichash_BYTES_MIN]; 
   crypto_generichash(hash, crypto_generichash_BYTES_MIN, id_public_key, crypto_sign_PUBLICKEYBYTES, NULL, 0);
@@ -120,8 +128,8 @@ void compute_fingerprint(unsigned char *id_public_key) {
   }
 }
 
+// Send client join packet to server, containing username and public key
 int send_client_hello(int sockfd, char *username, unsigned char public_key[], unsigned char id_public_key[], unsigned char id_secret_key[]) {
-  // Send client join packet to server, containing username and public key
   struct hello_packet *pack = malloc(sizeof(struct hello_packet));
 
   pack->type = PACKET_HELLO;
@@ -130,6 +138,7 @@ int send_client_hello(int sockfd, char *username, unsigned char public_key[], un
   memcpy(pack->public_key, public_key, crypto_kx_PUBLICKEYBYTES);
   memcpy(pack->id_public_key, id_public_key, crypto_sign_PUBLICKEYBYTES);
 
+  // Sign packet for receiptient to verify this packet actually came from this IP address (DOES NOT mean this user is who they say they are)
   if (crypto_sign_detached(pack->signature, NULL, public_key, crypto_kx_PUBLICKEYBYTES, id_secret_key) == -1) {
     fprintf(stderr, "[ERROR] crypto_sign_detached\n");
     exit(1);
@@ -143,6 +152,7 @@ int send_client_hello(int sockfd, char *username, unsigned char public_key[], un
   return 1;
 }
 
+// Get rx_key for use (key used to decrypt incoming messages), store in *key
 int get_user_rxkey(unsigned char *key, struct user_info users[], char *username, int user_count) {
   if (!username) {
     return -1;
@@ -168,6 +178,7 @@ int main(int argc, char *argv[]) {
   int existing_users = -1;
   struct user_info *users = malloc(sizeof *users * user_size);
 
+  // Process arguments
   if (argc != 3) {
     fprintf(stderr, "[ERROR] missing required field(s) - [hostname] [username]\n");
     exit(1);
@@ -190,6 +201,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   } 
 
+  // Create public and secret keys for user, and identity key pair for message signatures
   unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
   unsigned char secret_key[crypto_kx_SECRETKEYBYTES];
   crypto_kx_keypair(public_key, secret_key);
@@ -197,6 +209,7 @@ int main(int argc, char *argv[]) {
   unsigned char id_secret_key[crypto_sign_SECRETKEYBYTES];
   crypto_sign_keypair(id_public_key, id_secret_key);
 
+  // Initial instructions to print in console
   printf("--- SYSTEM NOTICE ---\n\n");
   printf("Welcome to the secure chat room.\n");
   printf("This server implements end-to-end encryption and manual public key verification.\n\n");
@@ -219,7 +232,7 @@ int main(int argc, char *argv[]) {
   pfds[STDIN].events = POLLIN;
   pfds[STDIN].revents = 0;
 
-  // Main loop
+  // Main loop listening for incoming packets and user input
   while (1) {
     int poll_count = poll(pfds, fd_count, -1);
 
@@ -249,7 +262,7 @@ int main(int argc, char *argv[]) {
           exit(1);
         }
 
-        // Decrypt message using shared key
+        // Decrypt message using symmetric key
         unsigned char rx_key[crypto_kx_SESSIONKEYBYTES];
         if (get_user_rxkey(rx_key, users, pack->sender, user_count) == -1) {
           fprintf(stderr, "[ERROR] retrieve rx_key\n");
@@ -287,7 +300,7 @@ int main(int argc, char *argv[]) {
           exit(1);
         }
 
-        // Get fingerprint of that user
+        // Get fingerprint of that user and print instructions for users to verify their safety number if the are just joining
         if (hello_pack->user_status == EXISTING_USER) {
           printf("- %s: ", hello_pack->username);
           compute_fingerprint(hello_pack->id_public_key);
@@ -298,7 +311,6 @@ int main(int argc, char *argv[]) {
             printf("Type \\leave to exit if any numbers don't match or anything else looks suspicious\n\n");
             printf("--- END OF NOTICE ---\n\n");
           }
-
         } else {
           printf("\n--- New user joined: %s ---\n", hello_pack->username);
           printf("--- Their safety number (verify with trusted method): ");
@@ -340,6 +352,7 @@ int main(int argc, char *argv[]) {
 
         existing_users = pack->num_users;
 
+        // Print instructions based on how many users are already in the room
         if (existing_users == 0) {
           printf("You are the only participant in the room.\n\n");
           printf("Use a trusted method (e.g. phone call or another app) to verify these numbers.\n\n");
@@ -351,7 +364,6 @@ int main(int argc, char *argv[]) {
           printf("There are %d existing participants: \n", existing_users);
         }
       }
-      
       else {
         fprintf(stderr, "[ERROR] invalid packet type, type=%d\n", type);
       }
