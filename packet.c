@@ -11,6 +11,11 @@ int read_goodbye_packet(int fd, struct goodbye_packet *pack);
 int read_serv_info_packet(int fd, struct serv_info_packet *pack);
 int send_all(int fd, char *buffer, uint32_t packet_size);
 
+// Send packet to socket with file descriptor fd
+// Put packet type in type
+// Packet info should already be stored in *pack
+// *pack should type-cast to the correct format for the packet type (e.g. PACKET_MESSAGE should cast to struct message_packet)
+// Returns 1 if successful, -1 if error
 int send_packet(int fd, uint32_t type, void *pack) {
   if (type == PACKET_MESSAGE) {
     return send_message_packet(fd, (struct message_packet *)pack);
@@ -94,8 +99,8 @@ int send_serv_info_packet(int fd, struct serv_info_packet *pack) {
   return send_all(fd, buffer, packet_size);
 }
 
+// repeat send() calls until all of packet is sent
 int send_all(int fd, char *buffer, uint32_t packet_size) {
-  // repeat send() calls until all of packet is sent
   uint32_t bytes_sent = 0;
   uint32_t bytes_left = packet_size;
   uint32_t n;
@@ -112,6 +117,11 @@ int send_all(int fd, char *buffer, uint32_t packet_size) {
   return 1;
 }
 
+// Read packet from socket with file descriptor fd
+// Put expected packet type in type 
+// Packet info will be placed in *pack
+// *pack should type-cast to the correct format for the packet type (e.g. PACKET_MESSAGE should cast to struct message_packet)
+// Returns 1 if successful, 0 or -1 if error
 int read_packet(int fd, uint32_t expected_type, void *pack) {
   if (expected_type == PACKET_MESSAGE) {
     return read_message_packet(fd, (struct message_packet *)pack);
@@ -250,6 +260,7 @@ int read_serv_info_packet(int fd, struct serv_info_packet *pack) {
   return 1;
 }
 
+// Reads and returns packet type (first 4 bytes of packet). If error, returns 0 or -1
 int read_packet_type(int fd) {
   uint32_t type;
   int rv;
@@ -262,8 +273,7 @@ int read_packet_type(int fd) {
   return type;
 }
 
-
-// Read exact number of bytes into buffer
+// Read exact number of bytes, specified by len, into *buffer
 int read_exact(int fd, void *buffer, int len) {
   int bytes;
   int total = 0;
