@@ -22,6 +22,7 @@
 #define PACKET_GOODBYE 3
 #define PACKET_SERV_INFO 4
 
+// Users send this when the join the server. It is broadcasting to all existing users in the server
 struct hello_packet {
   uint32_t type;
   uint32_t user_status;
@@ -31,6 +32,7 @@ struct hello_packet {
   unsigned char signature[crypto_sign_BYTES];
 };
 
+// Encrypted message from sender to receiptient. 
 struct message_packet {
   uint32_t type;
   char sender[USERNAME_LEN + 1];
@@ -40,16 +42,19 @@ struct message_packet {
   unsigned char message[MAX_MESSAGE_LEN + crypto_secretbox_MACBYTES]; // encypted
 };
 
+// Server broadcasts this to users when they detect a user has disconnected
 struct goodbye_packet {
   uint32_t type;
   char username[USERNAME_LEN + 1];
 };
 
+// First packet server sends to user when they join. Just contains number of users in server
 struct serv_info_packet {
   uint32_t type;
   uint32_t num_users;
 };
 
+// Internal user info storage by clients. Server does not have access to tx_key or rx_key, which is sensitive info
 struct user_info {
   int fd;
   char username[USERNAME_LEN + 1];
