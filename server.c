@@ -11,7 +11,7 @@ void *get_in_addr(struct sockaddr *sa) {
   return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-// Performs server network setup, including ggathering address info for network, creating socket, and binding to port
+// Performs server network setup, including gathering address info for network, creating socket, and binding to port
 int setup_server() {
   struct addrinfo hints, *servinfo, *p;
   int rv, sockfd;
@@ -89,6 +89,7 @@ void add_fd(struct pollfd *pfds[], struct user_info *users[], int newfd, int *fd
   (*fd_count)++;
 }
 
+// Store hello_packet information internally in users[]
 void add_user_info(struct user_info *users[], struct hello_packet *pack, int newfd, int fd_count, int fd_size) {
   (*users)[fd_count-1].fd = newfd;
   strncpy((*users)[fd_count-1].username, pack->username, USERNAME_LEN+1);
@@ -97,6 +98,7 @@ void add_user_info(struct user_info *users[], struct hello_packet *pack, int new
   memcpy((*users)[fd_count-1].signature, pack->signature, crypto_sign_BYTES);
 }
 
+// Broadcast goodbye_packet to all other users, and remove user from users[] and pfds[] by index
 void remove_user(struct pollfd pfds[], struct user_info users[], int index, int *fd_count) {
   int user_fd = users[index].fd;
 
@@ -141,7 +143,6 @@ int main(void) {
   int serverfd, newfd;
   struct sockaddr_storage conn_addr;
   socklen_t addrlen;
-
   char conn_ip[INET6_ADDRSTRLEN];
 
   int fd_count = 0;
@@ -156,11 +157,6 @@ int main(void) {
   memset(&users[0], 0, sizeof(struct user_info));
   fd_count = 1;
 
-  // Confirm sodium library initialized
-  if (sodium_init() < 0) {
-    exit(1);
-  } 
-
   // main loop
   while (1) {
     int poll_count = poll(pfds, fd_count, -1);
@@ -174,7 +170,6 @@ int main(void) {
     for (int i = 0; i < fd_count; i++) {
       if (pfds[i].revents & (POLLIN | POLLHUP)) {
         
-
         // If server if ready to read, then accept new connection
         if (pfds[i].fd == serverfd) {
           addrlen = sizeof conn_addr;
@@ -221,6 +216,7 @@ int main(void) {
               remove_user(pfds, users, i, &fd_count);
               i--; // so we examine the fd we just swapped into this index
             } else {
+              // NOTE: server only has access to sender, receiptient. Cannot decrypt the message
               printf("MESSAGE <from:%s> <to:%s> <bytes:%d>\n", pack->sender, pack->receiptient, pack->len);
 
               // Send message to receiptient without decrypting message
@@ -230,6 +226,7 @@ int main(void) {
                 free(pack);
               }
 
+              // Route packet to the correct receiptient
               if (send_packet(dest_fd, PACKET_MESSAGE, pack) == -1) {
                 fprintf(stderr, "ERROR (send)\n");
                 free(pack);
@@ -267,17 +264,18 @@ int main(void) {
                 exit(1);
               }
 
-              // Broadcast hello packet to all other users, and send hello packet to new user for each existing user
+              // Broadcast hello packet to all other users, and send hello packet from each existing user to new user
               for (int j = 0; j < fd_count; j++) {
                 int dest_fd = pfds[j].fd;
                 if (dest_fd != serverfd && dest_fd != sender_fd) {
+                  // Send hello packet from new user to existing user
                   if (send_packet(dest_fd, PACKET_HELLO, hello_pack) == -1) {
                     fprintf(stderr, "ERROR (send)");
                     free(hello_pack);
                     exit(1);
                   }
                   
-                  // Send hello packet to new user for each existing user
+                  // Send hello packet from existing user to new user
                   struct hello_packet *existing_user_hello = malloc(sizeof(struct hello_packet));
                   existing_user_hello->type = PACKET_HELLO;
                   existing_user_hello->user_status = EXISTING_USER;
