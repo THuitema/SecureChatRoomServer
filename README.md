@@ -56,7 +56,7 @@ serv_info_packet {
 
 ### Prerequisites
 
-- GCC or any standard C compiler
+- GCC
 - [libsodium](https://libsodium.gitbook.io/doc/) (cryptographic library)
 
 ### Installation
