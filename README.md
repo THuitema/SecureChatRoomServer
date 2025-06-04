@@ -67,7 +67,7 @@ serv_info_packet {
    ```
 2. If you installed libsodium using Homebrew, skip this step. Otherwise, you will need to edit CFLAGS and LDFLAGS. 
   
-  If you installed libsodium on Debian/Ubtuntu edit the Makefile accordingly:
+  Edit the Makefile accordingly:
   
    ```sh
     # Replace these:
