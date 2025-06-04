@@ -97,4 +97,4 @@ serv_info_packet {
     ```sh
     ./client [hostname] [username]
     ```
-   If running locally, replace `[hostname]` with `localhost`.
+   `[hostname]` is the hostname of the machine running `server`. If running locally, replace `[hostname]` with `localhost`.
