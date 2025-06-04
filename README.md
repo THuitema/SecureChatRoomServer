@@ -5,7 +5,7 @@
 
 A secure, lightweight chat room server written in C that enables end-to-end encrypted communication between users.
 This project harnesses the socket API to connect users through TCP sockets. 
-Furthermore, it implements strong security features to ensure end-to-end encryption. 
+Furthermore, it implements strong security features to ensure user and message authenticity. 
 
 This project separates itself from conventional end-to-end encrypted messaging because instead of messaging between two users, messages are broadcasted (but must be encrypted individually) to a group of users.
 
